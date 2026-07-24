@@ -24,6 +24,8 @@ import { StateMachine } from '../state-machine/StateMachine';
 import { SubjectLock } from '../subjectLock';
 import type { CoachState, DebugInfo, FormViolation, PoseSession, RenderPose, RepResult } from '../types';
 
+import { POSE_INFERENCE_FPS } from '../performanceProfile';
+
 import { useFrameRate } from './useFrameRate';
 
 const P = PUSHUP_PARAMS;
@@ -246,7 +248,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 					// instead of showing the pre-start copy.
 					commitCoach(isRunningRef.current ? 'STAND_FACING_CAMERA' : 'NO_BODY');
 				}
-				if (isRunningRef.current && now - lastDebugMs.current >= DEBUG_THROTTLE_MS) {
+				if (P.DEBUG_HUD && isRunningRef.current && now - lastDebugMs.current >= DEBUG_THROTTLE_MS) {
 					lastDebugMs.current = now;
 					setDebugInfo({
 						fps,
@@ -322,7 +324,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 					Math.max(Math.abs(velocities.leftWrist), Math.abs(velocities.rightWrist)) > P.HANDS_TRAVEL_MAX_SW_S;
 				signalPalmsPlanted.value = !wristsTraveling;
 
-				if (now - lastDebugMs.current >= DEBUG_THROTTLE_MS) {
+				if (P.DEBUG_HUD && now - lastDebugMs.current >= DEBUG_THROTTLE_MS) {
 					lastDebugMs.current = now;
 					setDebugInfo({
 						fps,
@@ -427,6 +429,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 	const { solution, hasPermission, requestPermission } = useCameraService({
 		onResults,
 		onError: handleDetectionError,
+		processingFps: isRunning ? POSE_INFERENCE_FPS.active : POSE_INFERENCE_FPS.idle,
 	});
 
 	const signal: PushUpSignal = {

@@ -1,10 +1,11 @@
 import React from 'react';
 import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import { MediapipeCamera } from 'react-native-mediapipe';
 
 import { usePoseSession } from './src/pose-module';
+import { PUSHUP_PARAMS } from './src/pose-module/exercises/pushup.config';
 import { DebugPanel } from './src/pose-module/screens/components/DebugPanel';
 import PermissionPlaceholder from './src/pose-module/screens/components/PermissionPlaceholder';
+import PoseCamera from './src/pose-module/screens/components/PoseCamera';
 import SkiaSkeletonOverlay from './src/pose-module/screens/components/SkiaSkeletonOverlay';
 
 const coachCopy: Record<string, string> = {
@@ -38,7 +39,7 @@ export default function App() {
 
   return (
     <View style={styles.root}>
-      <MediapipeCamera
+      <PoseCamera
         style={styles.camera}
         solution={solution}
         activeCamera="front"
@@ -60,7 +61,7 @@ export default function App() {
           </Pressable>
         </View>
 
-        {__DEV__ ? <DebugPanel info={debugInfo} /> : null}
+        {PUSHUP_PARAMS.DEBUG_HUD ? <DebugPanel info={debugInfo} /> : null}
       </SafeAreaView>
     </View>
   );

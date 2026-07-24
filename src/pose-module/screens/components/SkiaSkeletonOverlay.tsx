@@ -3,6 +3,7 @@ import { Canvas, Circle, LinearGradient, Path, Skia, vec } from '@shopify/react-
 import { type SharedValue, useDerivedValue } from 'react-native-reanimated';
 
 import { PUSHUP_PARAMS } from '@/src/pose-module/exercises/pushup.config';
+import { USE_LIGHTWEIGHT_ANDROID_OVERLAY } from '@/src/pose-module/performanceProfile';
 import { BRAND_ORANGE } from '@/src/pose-module/pyramid/pyramid';
 import { FULL_BONES, RENDER_POINTS } from '@/src/pose-module/skeleton';
 import type { RenderPose } from '@/src/pose-module/types';
@@ -125,7 +126,7 @@ interface SkiaSkeletonOverlayProps {
 	pose: SharedValue<RenderPose | null>;
 }
 
-const SkiaSkeletonOverlay = ({ pose }: SkiaSkeletonOverlayProps) => {
+const DetailedSkeletonOverlay = ({ pose }: SkiaSkeletonOverlayProps) => {
 	const withGlow = PUSHUP_PARAMS.DEBUG_UNCERTAIN_GLOW;
 
 	return (
@@ -139,5 +140,65 @@ const SkiaSkeletonOverlay = ({ pose }: SkiaSkeletonOverlayProps) => {
 		</Canvas>
 	);
 };
+
+// MediaPipe updates pose state independently of the display refresh rate. On
+// mid-range Android devices, keeping one gradient/worklet per limb spends a
+// noticeable part of the UI budget drawing the guide instead of the camera.
+// This version batches all lines and dots into three Skia draws. It changes
+// only the visual treatment; the pose, smoothing, form checks and rep counter
+// still receive every processed landmark.
+const LightweightAndroidSkeletonOverlay = ({ pose }: SkiaSkeletonOverlayProps) => {
+	const skeletonPath = useDerivedValue(() => {
+		const path = Skia.Path.Make();
+		const currentPose = pose.value;
+		if (!currentPose) return path;
+
+		for (const [aIdx, bIdx] of FULL_BONES) {
+			const a = currentPose.pts[aIdx];
+			const b = currentPose.pts[bIdx];
+			if (!a || !b || !a.show || !b.show) continue;
+			path.moveTo(a.x, a.y);
+			path.lineTo(b.x, b.y);
+		}
+		return path;
+	});
+
+	const jointPath = useDerivedValue(() => {
+		const path = Skia.Path.Make();
+		const currentPose = pose.value;
+		if (!currentPose) return path;
+
+		for (let idx = 0; idx < RENDER_POINTS.length; idx += 1) {
+			const point = currentPose.pts[idx];
+			if (!point?.show) continue;
+
+			const hasVisiblePartner = BONE_PARTNERS[idx].some(partner => currentPose.pts[partner]?.show);
+			if (hasVisiblePartner) path.addCircle(point.x, point.y, 6);
+		}
+		return path;
+	});
+
+	const opacity = useDerivedValue(() => {
+		const currentPose = pose.value;
+		if (!currentPose) return 0;
+
+		let maxAlpha = 0;
+		for (const point of currentPose.pts) {
+			if (point.show && point.alpha > maxAlpha) maxAlpha = point.alpha;
+		}
+		return maxAlpha;
+	});
+
+	return (
+		<Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
+			<Path path={skeletonPath} style="stroke" strokeWidth={4} strokeCap="round" strokeJoin="round" color="white" opacity={opacity} />
+			<Path path={jointPath} color="white" opacity={opacity} />
+			<Path path={jointPath} style="stroke" strokeWidth={4} color={BRAND_ORANGE} opacity={opacity} />
+		</Canvas>
+	);
+};
+
+const SkiaSkeletonOverlay = (props: SkiaSkeletonOverlayProps) =>
+	USE_LIGHTWEIGHT_ANDROID_OVERLAY ? <LightweightAndroidSkeletonOverlay {...props} /> : <DetailedSkeletonOverlay {...props} />;
 
 export default SkiaSkeletonOverlay;

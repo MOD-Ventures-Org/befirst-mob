@@ -121,9 +121,9 @@ export const PUSHUP_PARAMS = {
   // 'lite' = fastest inference, 'full' = balanced, 'heavy' = most accurate.
   POSE_MODEL: 'full' as 'lite' | 'full' | 'heavy',
 
-  // Debug HUD (FPS / inference time / delegate / model). Dev builds only by
-  // default; flip at runtime to profile a release build.
-  DEBUG_HUD: __DEV__,
+  // Debug HUD (FPS / inference time / delegate / model). Keep it off while
+  // exercising; flip this constant temporarily when profiling a device.
+  DEBUG_HUD: false,
 
   // Issue 3: primary-subject lock. A confident detection is rejected as
   // "not our subject" when it teleports or rescales versus the locked
