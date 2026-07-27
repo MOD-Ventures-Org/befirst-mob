@@ -54,15 +54,20 @@ export const getDroppedPercent = (cvFps: number, targetFps: number = NOMINAL_TAR
 	return Math.min(100, Math.max(0, dropped));
 };
 
-export const createPerfSnapshot = (buffer: PerfSampleBuffer, cvFps: number, sampleCount: number): PerfSnapshot => {
+export const createPerfSnapshot = (
+	buffer: PerfSampleBuffer,
+	cvFps: number,
+	sampleCount: number,
+	targetFps: number = NOMINAL_TARGET_FPS,
+): PerfSnapshot => {
 	const values = getPerfSamples(buffer);
 
 	return {
 		inferenceAvgMs: getAverage(values),
 		inferenceP95Ms: getPercentile(values, 95),
 		cvFps,
-		targetFps: NOMINAL_TARGET_FPS,
-		droppedPct: getDroppedPercent(cvFps),
+		targetFps,
+		droppedPct: getDroppedPercent(cvFps, targetFps),
 		sampleCount,
 	};
 };

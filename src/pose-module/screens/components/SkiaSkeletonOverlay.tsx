@@ -142,11 +142,9 @@ const DetailedSkeletonOverlay = ({ pose }: SkiaSkeletonOverlayProps) => {
 };
 
 // MediaPipe updates pose state independently of the display refresh rate. On
-// mid-range Android devices, keeping one gradient/worklet per limb spends a
-// noticeable part of the UI budget drawing the guide instead of the camera.
-// This version batches all lines and dots into three Skia draws. It changes
-// only the visual treatment; the pose, smoothing, form checks and rep counter
-// still receive every processed landmark.
+// Android, one batched path is used for bones and one for joints. The orange
+// joint outline is deliberately omitted here to keep the camera and skeleton
+// within the UI budget on mid-range phones; the tracking pipeline is unchanged.
 const LightweightAndroidSkeletonOverlay = ({ pose }: SkiaSkeletonOverlayProps) => {
 	const skeletonPath = useDerivedValue(() => {
 		const path = Skia.Path.Make();
@@ -193,7 +191,6 @@ const LightweightAndroidSkeletonOverlay = ({ pose }: SkiaSkeletonOverlayProps) =
 		<Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
 			<Path path={skeletonPath} style="stroke" strokeWidth={4} strokeCap="round" strokeJoin="round" color="white" opacity={opacity} />
 			<Path path={jointPath} color="white" opacity={opacity} />
-			<Path path={jointPath} style="stroke" strokeWidth={4} color={BRAND_ORANGE} opacity={opacity} />
 		</Canvas>
 	);
 };

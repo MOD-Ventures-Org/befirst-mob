@@ -26,6 +26,7 @@ export default function App() {
     isRunning,
     debugInfo,
     initError,
+    androidPerformanceTier,
     solution,
     hasPermission,
     requestPermission,
@@ -44,6 +45,7 @@ export default function App() {
         solution={solution}
         activeCamera="front"
         resizeMode="cover"
+        performanceTier={androidPerformanceTier}
       />
       <SkiaSkeletonOverlay pose={pose} />
 

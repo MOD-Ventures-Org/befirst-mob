@@ -3,19 +3,27 @@ import { Platform } from 'react-native';
 import { MediapipeCamera } from 'react-native-mediapipe';
 import { Camera, useCameraDevice, useCameraFormat } from 'react-native-vision-camera';
 
-import { ANDROID_CAMERA_FORMAT, ANDROID_CAMERA_FPS } from '../../performanceProfile';
+import {
+	ANDROID_CAMERA_FPS,
+	getAndroidCameraProfile,
+	type AndroidPerformanceTier,
+} from '../../performanceProfile';
 
-type PoseCameraProps = React.ComponentProps<typeof MediapipeCamera>;
+type PoseCameraProps = React.ComponentProps<typeof MediapipeCamera> & {
+	performanceTier?: AndroidPerformanceTier;
+};
 
 const AndroidPoseCamera = ({
 	style,
 	solution,
 	activeCamera = 'front',
 	resizeMode = 'cover',
+	performanceTier = 'high',
 }: PoseCameraProps) => {
 	const device = useCameraDevice(activeCamera);
+	const cameraProfile = getAndroidCameraProfile(performanceTier);
 	const format = useCameraFormat(device, [
-		{ videoResolution: ANDROID_CAMERA_FORMAT },
+		{ videoResolution: cameraProfile.cameraFormat },
 		{ fps: ANDROID_CAMERA_FPS },
 	]);
 
@@ -47,11 +55,12 @@ const AndroidPoseCamera = ({
 };
 
 // react-native-mediapipe's stock camera deliberately targets the best camera
-// format and enables photo output. That is useful for a general-purpose demo,
-// but it creates unnecessary work in a live Android exercise screen.
+// format and enables photo output. The Android path uses a measured device
+// profile instead, while high-end phones retain the existing 720p stream.
 const PoseCamera = (props: PoseCameraProps) => {
 	if (Platform.OS === 'android') return <AndroidPoseCamera {...props} />;
-	return <MediapipeCamera {...props} />;
+	const { performanceTier: _performanceTier, ...cameraProps } = props;
+	return <MediapipeCamera {...cameraProps} />;
 };
 
 export default PoseCamera;

@@ -1,0 +1,2 @@
+patchedDependencies:
+  react-native-mediapipe@0.6.0: patches/react-native-mediapipe@0.6.0.patch

@@ -1,0 +1,111 @@
+diff --git a/android/src/main/java/com/reactnativemediapipe/posedetection/PoseDetectionFrameProcessorPlugin.kt b/android/src/main/java/com/reactnativemediapipe/posedetection/PoseDetectionFrameProcessorPlugin.kt
+index 0f76d1877e125d4ece8eb0cae8c93886f8fe686a..313acc45e2c9870cdfdac0227327c18204c3a324 100644
+--- a/android/src/main/java/com/reactnativemediapipe/posedetection/PoseDetectionFrameProcessorPlugin.kt
++++ b/android/src/main/java/com/reactnativemediapipe/posedetection/PoseDetectionFrameProcessorPlugin.kt
+@@ -18,6 +18,10 @@ class PoseDetectionFrameProcessorPlugin() : FrameProcessorPlugin() {
+     val mappedOrientation = imageOrientation(orientation)
+     mappedOrientation ?: return false
+ 
++    // MediaPipe live-stream inference is asynchronous. Skip frames while the
++    // current one is still running so the next accepted frame is always fresh.
++    if (!detector.canAcceptFrame()) return false
++
+     val mpImage = MediaImageBuilder(frame.image).build()
+     detector.detectLiveStream(mpImage, mappedOrientation)
+     // val bitmap = imageToBitmap(frame.imageProxy)
+diff --git a/android/src/main/java/com/reactnativemediapipe/posedetection/PoseDetectorHelper.kt b/android/src/main/java/com/reactnativemediapipe/posedetection/PoseDetectorHelper.kt
+index 2641054b32d5add47193dd09720c9a8fe09a003b..708931bb02b0f11b078746520a6c4e0d2b1e086c 100644
+--- a/android/src/main/java/com/reactnativemediapipe/posedetection/PoseDetectorHelper.kt
++++ b/android/src/main/java/com/reactnativemediapipe/posedetection/PoseDetectorHelper.kt
+@@ -8,6 +8,7 @@ import android.os.Handler
+ import android.os.Looper
+ import android.os.SystemClock
+ import android.util.Log
++import java.util.concurrent.atomic.AtomicBoolean
+ import com.facebook.react.common.annotations.VisibleForTesting
+ import com.google.mediapipe.framework.image.BitmapImageBuilder
+ import com.google.mediapipe.framework.image.MPImage
+@@ -38,6 +39,7 @@ class PoseDetectorHelper(
+   // If the pose Landmarker will not change, a lazy val would be preferable.
+   private var poseLandmarker: PoseLandmarker? = null
+   private var imageRotation = 0
++  private val inferenceInFlight = AtomicBoolean(false)
+ 
+   init {
+     setupPoseLandmarker()
+@@ -45,6 +47,7 @@ class PoseDetectorHelper(
+ 
+   fun clearPoseLandmarker() {
+     poseDetectorListener = null
++		inferenceInFlight.set(false)
+     // This is a hack. If we call close directly, we crash. There is a theory
+     // that this is because the object detector is still doing some processing, and that
+     // it is not safe to close it. So a better solution might be to mark it and then when
+@@ -139,6 +142,10 @@ class PoseDetectorHelper(
+     return poseLandmarker == null
+   }
+ 
++  fun canAcceptFrame(): Boolean {
++    return poseLandmarker != null && !inferenceInFlight.get()
++  }
++
+   // Accepts the URI for a video file loaded from the user's gallery and attempts to run
+   // pose landmarker inference on the video. This process will evaluate every
+   // frame in the video and attach the results to a bundle that will be
+@@ -234,12 +241,18 @@ class PoseDetectorHelper(
+               "Attempting to call detectLiveStream" + " while not using RunningMode.LIVE_STREAM"
+       )
+     }
++		if (poseLandmarker == null || !inferenceInFlight.compareAndSet(false, true)) return
+     val frameTime = SystemClock.uptimeMillis()
+     // this is a hack bc we use this in the callback and it might have changed
+ //    this.imageRotation = orientationToDegrees(orientation)
+     this.imageRotation = orientationToDegrees(Orientation.PORTRAIT)
+     //    this.imageRotation = 90
+-    detectAsync(mpImage, frameTime, this.imageRotation)
++		try {
++			detectAsync(mpImage, frameTime, this.imageRotation)
++		} catch (error: RuntimeException) {
++			inferenceInFlight.set(false)
++			throw error
++		}
+   }
+ 
+   // Run face pose landmark using MediaPipe pose Landmarker API
+@@ -279,21 +292,26 @@ class PoseDetectorHelper(
+ 
+   // Return the landmark result to this PoseDetectorHelper's caller
+   private fun returnLivestreamResult(result: PoseLandmarkerResult, input: MPImage) {
+-    if (result.landmarks().size > 0) {
+-      val finishTimeMs = SystemClock.uptimeMillis()
+-      val inferenceTime = finishTimeMs - result.timestampMs()
+-
+-      poseDetectorListener?.onResults(
+-              ResultBundle(listOf(result), inferenceTime, input.height, input.width)
+-      )
+-    } else {
+-      poseDetectorListener?.onEmpty()
+-    }
++		try {
++			if (result.landmarks().size > 0) {
++				val finishTimeMs = SystemClock.uptimeMillis()
++				val inferenceTime = finishTimeMs - result.timestampMs()
++
++				poseDetectorListener?.onResults(
++						ResultBundle(listOf(result), inferenceTime, input.height, input.width)
++				)
++			} else {
++				poseDetectorListener?.onEmpty()
++			}
++		} finally {
++			inferenceInFlight.set(false)
++		}
+   }
+ 
+   // Return errors thrown during detection to this PoseDetectorHelper's
+   // caller
+   private fun returnLivestreamError(error: RuntimeException) {
++		inferenceInFlight.set(false)
+     poseDetectorListener?.onError(error.message ?: "An unknown error has occurred")
+   }
+ 

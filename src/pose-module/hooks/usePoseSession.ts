@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 
 import type { DetectionError, PoseDetectionResultBundle, ViewCoordinator } from 'react-native-mediapipe';
 import { type SharedValue, useSharedValue } from 'react-native-reanimated';
@@ -24,7 +25,13 @@ import { StateMachine } from '../state-machine/StateMachine';
 import { SubjectLock } from '../subjectLock';
 import type { CoachState, DebugInfo, FormViolation, PoseSession, RenderPose, RepResult } from '../types';
 
-import { POSE_INFERENCE_FPS } from '../performanceProfile';
+import {
+	ANDROID_PROFILE_EVALUATION_INTERVAL_FRAMES,
+	getPoseInferenceFps,
+	resolveAndroidPerformanceTier,
+	shouldDowngradeAndroidProfile,
+	type AndroidPerformanceTier,
+} from '../performanceProfile';
 
 import { useFrameRate } from './useFrameRate';
 
@@ -37,6 +44,9 @@ const COACH_HOLD_FRAMES = 6;
 // Push debug telemetry to React state at ~6-7Hz, not per frame, so the debug
 // overlay does not add a per-frame re-render to the pose hot path.
 const DEBUG_THROTTLE_MS = 150;
+// Coach text is secondary to camera/pose work. State is kept current in refs,
+// while React receives no more than four updates per second.
+const COACH_UI_THROTTLE_MS = 250;
 
 // The five lines that must stay on screen while counting: shoulder bridge +
 // both upper arms + both forearms → these six joints.
@@ -137,6 +147,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 	const [repCount, setRepCount] = useState(0);
 	const [coachState, setCoachState] = useState<CoachState>('NO_BODY');
 	const [isRunning, setIsRunning] = useState(false);
+	const [androidPerformanceTier, setAndroidPerformanceTier] = useState<AndroidPerformanceTier>('high');
 	const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
 	// Surfaces a failed pose-landmarker init (e.g. delegate/model load failure)
 	// so the screen can show an actual error instead of silently sitting on a
@@ -144,6 +155,10 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 	// `console.error`, invisible in a release build.
 	const [initError, setInitError] = useState<string | null>(null);
 	const lastDebugMs = useRef(0);
+	const performanceTierRef = useRef<AndroidPerformanceTier>('high');
+	const processingFps = getPoseInferenceFps(androidPerformanceTier, isRunning);
+	const processingFpsRef = useRef(processingFps);
+	processingFpsRef.current = processingFps;
 
 	const isRunningRef = useRef(false);
 	const repCountRef = useRef(0);
@@ -158,12 +173,24 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 	const coachRef = useRef<CoachState>('NO_BODY');
 	const coachCandidate = useRef<CoachState>('NO_BODY');
 	const coachHold = useRef(0);
+	const renderedCoachRef = useRef<CoachState>('NO_BODY');
+	const lastCoachUiUpdateMs = useRef(0);
 
 	const { measure } = useFrameRate();
 
-	const commitCoach = useCallback((next: CoachState) => {
+	const commitCoach = useCallback((next: CoachState, now: number) => {
+		const publishCoach = () => {
+			if (renderedCoachRef.current === coachRef.current || now - lastCoachUiUpdateMs.current < COACH_UI_THROTTLE_MS) {
+				return;
+			}
+			renderedCoachRef.current = coachRef.current;
+			lastCoachUiUpdateMs.current = now;
+			setCoachState(coachRef.current);
+		};
+
 		if (next === coachRef.current) {
 			coachHold.current = 0;
+			publishCoach();
 			return;
 		}
 		if (next === coachCandidate.current) {
@@ -171,7 +198,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 			if (coachHold.current >= COACH_HOLD_FRAMES) {
 				coachRef.current = next;
 				coachHold.current = 0;
-				setCoachState(next);
+				publishCoach();
 			}
 		} else {
 			coachCandidate.current = next;
@@ -222,6 +249,22 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 			const fps = measure();
 			addPerfSample(inferenceSamples.current, results.inferenceTime);
 			processedFrames.current += 1;
+			if (
+				Platform.OS === 'android' &&
+				processedFrames.current % ANDROID_PROFILE_EVALUATION_INTERVAL_FRAMES === 0
+			) {
+				const performance = createPerfSnapshot(
+					inferenceSamples.current,
+					fps,
+					processedFrames.current,
+					processingFpsRef.current,
+				);
+				const nextTier = resolveAndroidPerformanceTier(performance);
+				if (shouldDowngradeAndroidProfile(performanceTierRef.current, nextTier)) {
+					performanceTierRef.current = nextTier;
+					setAndroidPerformanceTier(nextTier);
+				}
+			}
 
 			const frame = toSkeleton(results, vc);
 			const now = Date.now();
@@ -246,7 +289,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 					resetDepthState();
 					// Body loss never resets the session — ask the athlete back
 					// instead of showing the pre-start copy.
-					commitCoach(isRunningRef.current ? 'STAND_FACING_CAMERA' : 'NO_BODY');
+					commitCoach(isRunningRef.current ? 'STAND_FACING_CAMERA' : 'NO_BODY', now);
 				}
 				if (P.DEBUG_HUD && isRunningRef.current && now - lastDebugMs.current >= DEBUG_THROTTLE_MS) {
 					lastDebugMs.current = now;
@@ -258,7 +301,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 						tier: 'NO_BODY',
 						missingFrames: missingFrames.current,
 						repCount: repCountRef.current,
-						perf: createPerfSnapshot(inferenceSamples.current, fps, processedFrames.current),
+						perf: createPerfSnapshot(inferenceSamples.current, fps, processedFrames.current, processingFpsRef.current),
 					});
 				}
 				return;
@@ -344,7 +387,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 						phase: currentPhase,
 						repCount: repCountRef.current,
 						gateChecks: computeGateDiagnostics(smoothedFrame, angles, { plankish, depth, wristsTraveling }),
-						perf: createPerfSnapshot(inferenceSamples.current, fps, processedFrames.current),
+						perf: createPerfSnapshot(inferenceSamples.current, fps, processedFrames.current, processingFpsRef.current),
 					});
 				}
 
@@ -416,7 +459,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 			} else {
 				coach = now - armedAtMs.current < P.GO_DISPLAY_MS ? 'GO' : 'COUNTING';
 			}
-			commitCoach(coach);
+			commitCoach(coach, now);
 		},
 		[measure, commitCoach, pose, stop, resetDepthState],
 	);
@@ -429,7 +472,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 	const { solution, hasPermission, requestPermission } = useCameraService({
 		onResults,
 		onError: handleDetectionError,
-		processingFps: isRunning ? POSE_INFERENCE_FPS.active : POSE_INFERENCE_FPS.idle,
+		processingFps,
 	});
 
 	const signal: PushUpSignal = {
@@ -447,6 +490,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 		isRunning,
 		debugInfo,
 		initError,
+		androidPerformanceTier,
 		solution,
 		hasPermission,
 		requestPermission,
