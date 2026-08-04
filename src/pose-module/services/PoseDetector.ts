@@ -1,6 +1,6 @@
 import type { PoseDetectionResultBundle, ViewCoordinator } from 'react-native-mediapipe';
 
-import type { Joint, JointVisibility, PoseFrame, Skeleton } from '../types';
+import type { Joint, JointVisibility, PoseFrame, Skeleton, WorldSkeleton } from '../types';
 
 // MediaPipe PoseLandmarker landmark index for each skeleton joint.
 const JOINT_LANDMARK_INDEX: Record<keyof Skeleton, number> = {
@@ -37,6 +37,7 @@ export function toSkeleton(
   vc: ViewCoordinator,
 ): PoseFrame | null {
   const landmarks = results.results[0]?.landmarks[0];
+  const worldLandmarks = results.results[0]?.worldLandmarks?.[0];
   if (!landmarks || landmarks.length < 33) {
     return null; // Not enough landmarks detected
   }
@@ -45,16 +46,21 @@ export function toSkeleton(
 
   const skeleton = {} as Skeleton;
   const normalized = {} as Skeleton;
+  const world = worldLandmarks && worldLandmarks.length >= 33 ? ({} as WorldSkeleton) : undefined;
   const visibility = {} as JointVisibility;
 
   for (const joint of Object.keys(JOINT_LANDMARK_INDEX) as (keyof Skeleton)[]) {
     const landmark = landmarks[JOINT_LANDMARK_INDEX[joint]];
     skeleton[joint] = vc.convertPoint(frameDims, landmark);
     normalized[joint] = { x: landmark.x, y: landmark.y };
+    if (world) {
+      const worldLandmark = worldLandmarks![JOINT_LANDMARK_INDEX[joint]];
+      world[joint] = { x: worldLandmark.x, y: worldLandmark.y, z: worldLandmark.z };
+    }
     visibility[joint] = landmark.visibility ?? landmark.presence ?? 1;
   }
 
-  return { skeleton, normalized, visibility };
+  return { skeleton, normalized, ...(world ? { world } : {}), visibility };
 }
 
 export function toSkeletonFromImage(

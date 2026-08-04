@@ -3,6 +3,16 @@ export interface Joint {
   y: number;
 }
 
+// MediaPipe's metric, body-relative landmark coordinates. Unlike the screen
+// skeleton, these retain depth and are therefore appropriate for movement
+// signals whose primary motion is toward/away from the camera (for example a
+// push-up filmed from the front).
+export interface WorldJoint {
+	x: number;
+	y: number;
+	z: number;
+}
+
 export interface Skeleton {
   nose: Joint;
   leftEye: Joint;
@@ -23,6 +33,8 @@ export interface Skeleton {
   rightAnkle: Joint;
 }
 
+export type WorldSkeleton = Record<keyof Skeleton, WorldJoint>;
+
 // Per-joint MediaPipe visibility/presence confidence in [0, 1].
 export type JointVisibility = Record<keyof Skeleton, number>;
 
@@ -31,6 +43,10 @@ export type JointVisibility = Record<keyof Skeleton, number>;
 export interface PoseFrame {
 	skeleton: Skeleton;
 	normalized: Skeleton;
+	// `undefined` only if a native bridge does not expose world landmarks. The
+	// current Android/iOS MediaPipe bridge does expose them; keeping this
+	// optional preserves a safe 2-D fallback for older builds.
+	world?: WorldSkeleton;
 	visibility: JointVisibility;
 }
 
@@ -42,6 +58,8 @@ export type CoachState =
   | 'TOO_CLOSE'
   | 'NO_BODY'
   | 'NOT_IN_PLANK' // pre-start: waiting for the push-up position
+	| 'NOT_IN_SQUAT' // pre-start: lower body is not fully visible for squat tracking
+	| 'NOT_IN_SIDE_STEPS' // pre-start: lower body is not fully visible for side-step tracking
   | 'GO' // session just started — counting is live
   | 'STAND_FACING_CAMERA' // the five upper-body lines are lost — counting continues
   | 'READY' // pre-start: valid pose, waiting for the Start button
@@ -116,6 +134,13 @@ export interface DebugInfo {
   velocities?: JointVelocities;
   phase?: Phase;
   repCount?: number;
+	counter?: {
+		exercise: string;
+		state: string;
+		reason: string;
+		signal?: number | null;
+		trackingAgeMs?: number;
+	};
 	perf?: PerfSnapshot;
   // Live per-condition checklist for the debug overlay (diagnostics only).
   gateChecks?: {

@@ -8,3 +8,9 @@ export type {
   RepResult,
   Skeleton,
 } from './types';
+export type { SquatHold, SquatMode, SquatTrackingState, SquatVariant } from './squats/SquatDetector';
+export type {
+	BandedSideStepTrackingState,
+	SideStepDirection,
+	SideStepHold,
+} from './side-steps/BandedSideStepDetector';

@@ -1,5 +1,5 @@
 import { PUSHUP_PARAMS } from './exercises/pushup.config';
-import type { Joint, JointVisibility, Skeleton } from './types';
+import type { Joint, JointVisibility, Skeleton, WorldJoint, WorldSkeleton } from './types';
 
 // Confidence accessor (MediaPipe visibility/presence). Falls back to 0.
 export function conf(visibility: JointVisibility, joint: keyof Skeleton): number {
@@ -28,6 +28,14 @@ export function angleAt(vertex: Joint, a: Joint, c: Joint): number | null {
 
 export function shoulderWidth(s: Skeleton): number {
 	return dist(s.leftShoulder, s.rightShoulder);
+}
+
+export function worldDist(a: WorldJoint, b: WorldJoint): number {
+	return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+export function worldShoulderWidth(s: WorldSkeleton): number {
+	return worldDist(s.leftShoulder, s.rightShoulder);
 }
 
 // Elbow angle for one side, only when the whole arm chain is confident.
@@ -87,4 +95,33 @@ export function bodyExtension(s: Skeleton, v: JointVisibility): number | null {
 	else return null;
 
 	return (wristY - shoulderMidY) / width;
+}
+
+/**
+ * View-independent push-up signal. At the top, shoulder→wrist distance is
+ * close to the length of a straight arm; at the bottom, it shrinks as the arm
+ * bends. The signal is normalized by world shoulder width and is therefore
+ * usable from a front, 45-degree, or side camera position.
+ *
+ * A side is accepted independently so a short occlusion of one wrist/elbow
+ * cannot destroy an otherwise valid rep. We deliberately use the raw world
+ * landmarks rather than the screen/render smoother: counting must not lag the
+ * athlete's motion merely to make the drawn skeleton look nicer.
+ */
+export function worldArmExtension(world: WorldSkeleton | undefined, v: JointVisibility): number | null {
+	if (!world || conf(v, 'leftShoulder') < PUSHUP_PARAMS.DEPTH_MIN || conf(v, 'rightShoulder') < PUSHUP_PARAMS.DEPTH_MIN) {
+		return null;
+	}
+	const width = worldShoulderWidth(world);
+	if (!Number.isFinite(width) || width <= 0) return null;
+
+	const extensions: number[] = [];
+	if (conf(v, 'leftWrist') >= PUSHUP_PARAMS.DEPTH_MIN) {
+		extensions.push(worldDist(world.leftShoulder, world.leftWrist) / width);
+	}
+	if (conf(v, 'rightWrist') >= PUSHUP_PARAMS.DEPTH_MIN) {
+		extensions.push(worldDist(world.rightShoulder, world.rightWrist) / width);
+	}
+	if (extensions.length === 0) return null;
+	return extensions.reduce((sum, value) => sum + value, 0) / extensions.length;
 }

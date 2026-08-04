@@ -6,9 +6,11 @@ import { type SharedValue, useSharedValue } from 'react-native-reanimated';
 
 import { getExerciseConfig } from '../exercises';
 import { PUSHUP_PARAMS } from '../exercises/pushup.config';
+import { SQUAT_PARAMS } from '../exercises/squat.config';
+import { CounterTraceRecorder } from '../counterTrace';
 import type { PushUpSignal } from '../games/signal';
 import { computeGateDiagnostics } from '../gateDiagnostics';
-import { bodyExtension } from '../geometry';
+import { bodyExtension, worldArmExtension } from '../geometry';
 import { SkeletonOneEuro } from '../oneEuro';
 import { addPerfSample, createPerfSampleBuffer, createPerfSnapshot, resetPerfSampleBuffer } from '../perfMetrics';
 import { displayTier, shouldersPresent, tooClose } from '../plausibility';
@@ -21,6 +23,13 @@ import { FormChecker } from '../services/FormChecker';
 import { toSkeleton } from '../services/PoseDetector';
 import { VelocityTracker } from '../services/VelocityTracker';
 import { buildRenderPose } from '../skeleton';
+import {
+	BandedSideStepDetector,
+	type BandedSideStepTrackingState,
+	type BandedSideStepUpdate,
+} from '../side-steps/BandedSideStepDetector';
+import { SquatDetector, type SquatTrackingState, type SquatUpdate } from '../squats/SquatDetector';
+import { measureSquat } from '../squats/squatMetrics';
 import { StateMachine } from '../state-machine/StateMachine';
 import { SubjectLock } from '../subjectLock';
 import type { CoachState, DebugInfo, FormViolation, PoseSession, RenderPose, RepResult } from '../types';
@@ -47,6 +56,9 @@ const DEBUG_THROTTLE_MS = 150;
 // Coach text is secondary to camera/pose work. State is kept current in refs,
 // while React receives no more than four updates per second.
 const COACH_UI_THROTTLE_MS = 250;
+// The live hold clock needs to feel responsive, without pushing camera-frame
+// updates through React.
+const SQUAT_UI_THROTTLE_MS = 100;
 
 // The five lines that must stay on screen while counting: shoulder bridge +
 // both upper arms + both forearms → these six joints.
@@ -55,6 +67,9 @@ const FIVE_LINES_JOINTS = ['leftShoulder', 'rightShoulder', 'leftElbow', 'rightE
 export interface UsePoseSessionConfig {
 	exercise: string;
 	targetReps?: number;
+	// Stores a short, in-memory trace of counter decisions for device testing.
+	// It defaults off and never writes camera or landmark data to disk.
+	debugTrace?: boolean;
 	onComplete?: (session: PoseSession) => void;
 	// Fired once per newly counted rep (discrete event, not a cumulative count).
 	// Used by the Pyramid mode to drive its set / rest / grace state machine; the
@@ -107,12 +122,19 @@ function buildPoseSession(exercise: string, startedAt: number, reps: RepResult[]
  * StateMachine + FormChecker run in parallel for phase display and per-rep
  * form scores.
  */
-export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UsePoseSessionConfig) {
+export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugTrace = false }: UsePoseSessionConfig) {
+	const isSquat = exercise === 'squat';
+	const isJumpSquat = exercise === 'jump-squat';
+	const isSquatExercise = isSquat || isJumpSquat;
+	const isBandedSideStep = exercise === 'banded-side-step';
+	const isLowerBodyExercise = isSquatExercise || isBandedSideStep;
 	const exerciseConfig = useRef(getExerciseConfig(exercise));
 
 	const oneEuro = useRef(new SkeletonOneEuro());
 	const stabilizer = useRef(new PoseStabilizer());
 	const repDetector = useRef(new RepDetector());
+	const squatDetector = useRef(new SquatDetector(isJumpSquat ? 'jump' : 'standard'));
+	const sideStepDetector = useRef(new BandedSideStepDetector());
 	const subjectLock = useRef(new SubjectLock());
 	const velocityTracker = useRef(new VelocityTracker(0.4));
 	const stateMachine = useRef(new StateMachine(exerciseConfig.current));
@@ -131,6 +153,12 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 	const lastPosition = useRef<number | null>(null);
 	const depthHoldFrames = useRef(0);
 	const lastBodyMs = useRef(0);
+	// The counter state is allowed to survive a short confidence dip. A raw
+	// camera frame can lose an ankle/wrist during a jump even while the next
+	// frame immediately recovers it; that must not restart the exercise.
+	const lastLowerBodyTrackedMs = useRef(0);
+	const counterTrace = useRef(new CounterTraceRecorder());
+	counterTrace.current.setEnabled(debugTrace);
 	const armedAtMs = useRef(0);
 	// Last time all five upper-body lines were confidently tracked.
 	const lastLinesOkMs = useRef(0);
@@ -145,10 +173,15 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 	const signalPalmsPlanted = useSharedValue(true);
 
 	const [repCount, setRepCount] = useState(0);
+	const [squatTracking, setSquatTracking] = useState<SquatTrackingState>(() => squatDetector.current.snapshot(0));
+	const [sideStepTracking, setSideStepTracking] = useState<BandedSideStepTrackingState>(() =>
+		sideStepDetector.current.snapshot(0),
+	);
 	const [coachState, setCoachState] = useState<CoachState>('NO_BODY');
 	const [isRunning, setIsRunning] = useState(false);
 	const [androidPerformanceTier, setAndroidPerformanceTier] = useState<AndroidPerformanceTier>('high');
 	const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
+	const [trackingDetail, setTrackingDetail] = useState('');
 	// Surfaces a failed pose-landmarker init (e.g. delegate/model load failure)
 	// so the screen can show an actual error instead of silently sitting on a
 	// frozen skeleton/rep count forever — this previously only reached
@@ -175,6 +208,8 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 	const coachHold = useRef(0);
 	const renderedCoachRef = useRef<CoachState>('NO_BODY');
 	const lastCoachUiUpdateMs = useRef(0);
+	const lastSquatUiUpdateMs = useRef(0);
+	const trackingDetailRef = useRef('');
 
 	const { measure } = useFrameRate();
 
@@ -206,12 +241,63 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 		}
 	}, []);
 
+	// Unlike pose data, this string only changes on a detector-state transition
+	// or a genuine tracking problem, so it stays off the camera-frame render
+	// path while still explaining why a counter is not advancing.
+	const commitTrackingDetail = useCallback((next: string) => {
+		if (next === trackingDetailRef.current) return;
+		trackingDetailRef.current = next;
+		setTrackingDetail(next);
+	}, []);
+
+	const publishSquatTracking = useCallback((update: SquatUpdate, now: number) => {
+		const shouldPublish =
+			update.rep !== undefined ||
+			update.completedHold !== undefined ||
+			now - lastSquatUiUpdateMs.current >= SQUAT_UI_THROTTLE_MS;
+		if (!shouldPublish) return;
+		lastSquatUiUpdateMs.current = now;
+		setSquatTracking({
+			repCounts: update.repCounts,
+			totalReps: update.totalReps,
+			activeVariant: update.activeVariant,
+			activeHold: update.activeHold,
+			holds: update.holds,
+			status: update.status,
+		});
+	}, []);
+
+	const publishSideStepTracking = useCallback((update: BandedSideStepUpdate, now: number) => {
+		const shouldPublish =
+			update.step !== undefined ||
+			update.completedHold !== undefined ||
+			now - lastSquatUiUpdateMs.current >= SQUAT_UI_THROTTLE_MS;
+		if (!shouldPublish) return;
+		lastSquatUiUpdateMs.current = now;
+		setSideStepTracking({
+			leftSteps: update.leftSteps,
+			rightSteps: update.rightSteps,
+			totalSteps: update.totalSteps,
+			activeDirection: update.activeDirection,
+			activeHold: update.activeHold,
+			holds: update.holds,
+			status: update.status,
+		});
+	}, []);
+
 	const stop = useCallback(() => {
 		if (!isRunningRef.current) return;
+		if (isSquatExercise) {
+			const now = Date.now();
+			publishSquatTracking(squatDetector.current.finish(now), now);
+		} else if (isBandedSideStep) {
+			const now = Date.now();
+			publishSideStepTracking(sideStepDetector.current.finish(now), now);
+		}
 		isRunningRef.current = false;
 		setIsRunning(false);
 		onCompleteRef.current?.(buildPoseSession(exercise, sessionStartedAt.current, repHistory.current));
-	}, [exercise]);
+	}, [exercise, isBandedSideStep, isSquatExercise, publishSideStepTracking, publishSquatTracking]);
 
 	// Clears the depth envelope only — the rep count survives (mid-set rest,
 	// brief body loss). Full counter reset happens in start().
@@ -229,20 +315,28 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 		stateMachine.current.resetSession();
 		velocityTracker.current.reset();
 		repDetector.current.reset();
+		squatDetector.current.reset();
+		sideStepDetector.current.reset();
 		subjectLock.current.reset();
 		// No readiness gate — the session is live immediately; GO shows briefly.
 		armedAtMs.current = Date.now();
 		lastLinesOkMs.current = 0;
+		lastLowerBodyTrackedMs.current = 0;
 		resetPerfSampleBuffer(inferenceSamples.current);
 		processedFrames.current = 0;
 		resetDepthState();
 		repHistory.current = [];
 		sessionStartedAt.current = Date.now();
 		repCountRef.current = 0;
+		lastSquatUiUpdateMs.current = 0;
+		counterTrace.current.reset();
 		setRepCount(0);
+		setSquatTracking(squatDetector.current.snapshot(0));
+		setSideStepTracking(sideStepDetector.current.snapshot(0));
+		commitTrackingDetail('');
 		isRunningRef.current = true;
 		setIsRunning(true);
-	}, [resetDepthState]);
+	}, [commitTrackingDetail, resetDepthState]);
 
 	const onResults = useCallback(
 		(results: PoseDetectionResultBundle, vc: ViewCoordinator) => {
@@ -287,6 +381,12 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 					oneEuro.current.reset();
 					velocityTracker.current.reset();
 					resetDepthState();
+					if (isSquatExercise) {
+						publishSquatTracking(squatDetector.current.pause(now), now);
+					} else if (isBandedSideStep) {
+						publishSideStepTracking(sideStepDetector.current.pause(now), now);
+					}
+					commitTrackingDetail('Tracking lost — return your full body to the frame');
 					// Body loss never resets the session — ask the athlete back
 					// instead of showing the pre-start copy.
 					commitCoach(isRunningRef.current ? 'STAND_FACING_CAMERA' : 'NO_BODY', now);
@@ -324,9 +424,19 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 			const rawPose = buildRenderPose(smoothed, frame.normalized, frame.visibility, tier);
 			// Temporal hysteresis: sticky lines, rate-limited alpha, no flying joints.
 			pose.value = stabilizer.current.update(rawPose, tier !== 'NO_BODY', now);
+			// Rendering uses the One Euro-filtered skeleton. Exercise metrics must
+			// use raw landmarks: visual smoothing otherwise delays and flattens the
+			// exact high-velocity portion of a jump or side step.
+			const squatMetrics = isLowerBodyExercise ? measureSquat(frame.skeleton, frame.visibility) : null;
+			if (squatMetrics) lastLowerBodyTrackedMs.current = now;
 
-			// --- Robust depth signal (shoulder→hand gap), held through brief dropouts ---
-			let depth = bodyExtension(smoothed, frame.visibility);
+			// --- Push-up signal: world-space arm extension first, 2-D fallback ---
+			// The old counter measured only screen Y. From a front/floor camera the
+			// chest commonly moves along camera depth, so the signal was flat despite
+			// a real rep. MediaPipe already supplies world landmarks; use their 3-D
+			// shoulder→wrist distance, preserving the old 2-D signal for old bridges.
+			const imageDepth = bodyExtension(frame.skeleton, frame.visibility);
+			let depth = worldArmExtension(frame.world, frame.visibility) ?? imageDepth;
 			if (depth === null) {
 				if (lastDepth.current !== null && depthHoldFrames.current < P.DEPTH_HOLD_FRAMES) {
 					depth = lastDepth.current;
@@ -337,8 +447,11 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 				depthHoldFrames.current = 0;
 			}
 
-			// Plank-ish: hands clearly below the shoulders (floor-facing setup).
-			const plankish = depth !== null && depth > P.PLANK_DEPTH_MIN;
+			const pushupCanCount = !isUprightExtended(frame.skeleton, frame.visibility);
+			// A valid world-space arm signal and a non-upright body prove that the
+			// athlete is in the exercise. This intentionally does not depend on the
+			// old screen-Y hand gap, which is view-angle dependent.
+			const plankish = depth !== null && pushupCanCount;
 			if (plankish) {
 				lastBodyMs.current = now;
 			} else if (now - lastBodyMs.current > P.LOST_TIMEOUT_MS) {
@@ -346,14 +459,79 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 			}
 
 			if (isRunningRef.current) {
+				if (isSquatExercise) {
+					signalPalmsPlanted.value = true;
+					const squatUpdate = squatMetrics
+						? squatDetector.current.update(squatMetrics, now)
+						: now - lastLowerBodyTrackedMs.current <= SQUAT_PARAMS.TRACKING_GAP_MS
+							? squatDetector.current.gap(now)
+							: squatDetector.current.pause(now);
+					publishSquatTracking(squatUpdate, now);
+					commitTrackingDetail(squatUpdate.status);
+					counterTrace.current.record({
+						atMs: now,
+						exercise,
+						state: squatUpdate.activeVariant ?? 'tracking',
+						reason: squatUpdate.status,
+						signal: squatMetrics?.kneeAngle ?? null,
+						trackingAgeMs: Math.max(0, now - lastLowerBodyTrackedMs.current),
+					});
+
+					if (squatUpdate.rep) {
+						repCountRef.current = squatUpdate.totalReps;
+						setRepCount(squatUpdate.totalReps);
+						repHistory.current.push({
+							repNumber: squatUpdate.totalReps,
+							isValid: true,
+							formScore: 100,
+							violations: [],
+						});
+						onRepRef.current?.();
+						if (targetRepsRef.current && squatUpdate.totalReps >= targetRepsRef.current) {
+							stop();
+						}
+					}
+				} else if (isBandedSideStep) {
+					signalPalmsPlanted.value = true;
+					const sideStepUpdate = squatMetrics
+						? sideStepDetector.current.update(squatMetrics, now)
+						: now - lastLowerBodyTrackedMs.current <= SQUAT_PARAMS.TRACKING_GAP_MS
+							? sideStepDetector.current.gap(now)
+							: sideStepDetector.current.pause(now);
+					publishSideStepTracking(sideStepUpdate, now);
+					commitTrackingDetail(sideStepUpdate.status);
+					counterTrace.current.record({
+						atMs: now,
+						exercise,
+						state: sideStepUpdate.activeDirection ?? 'tracking',
+						reason: sideStepUpdate.status,
+						signal: squatMetrics?.kneeAngle ?? null,
+						trackingAgeMs: Math.max(0, now - lastLowerBodyTrackedMs.current),
+					});
+
+					if (sideStepUpdate.step) {
+						repCountRef.current = sideStepUpdate.totalSteps;
+						setRepCount(sideStepUpdate.totalSteps);
+						repHistory.current.push({
+							repNumber: sideStepUpdate.totalSteps,
+							isValid: true,
+							formScore: 100,
+							violations: [],
+						});
+						onRepRef.current?.();
+						if (targetRepsRef.current && sideStepUpdate.totalSteps >= targetRepsRef.current) {
+							stop();
+						}
+					}
+				} else {
 				const angles = computeAngles(smoothed);
-				const velocities = velocityTracker.current.update(smoothed, now);
+				const velocities = velocityTracker.current.update(frame.skeleton, now);
 
 				// The only counting guard: the view-independent "stood up" signal —
 				// torso angle is unusable with the floor camera facing the athlete
 				// (see isUprightExtended). In plank it is false, so the first
 				// push-up counts immediately.
-				const canCount = !isUprightExtended(smoothed, frame.visibility);
+				const canCount = pushupCanCount;
 
 				const currentPhase = stateMachine.current.getPhase();
 				const formResult = formChecker.current.evaluate(currentPhase, angles, smoothed);
@@ -387,11 +565,42 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 						phase: currentPhase,
 						repCount: repCountRef.current,
 						gateChecks: computeGateDiagnostics(smoothedFrame, angles, { plankish, depth, wristsTraveling }),
+						counter: {
+							exercise: 'pushup',
+							state: currentPhase,
+							reason: !canCount
+								? 'Get into push-up position'
+								: depth === null
+									? 'Keep shoulders and at least one wrist visible'
+									: wristsTraveling
+										? 'Keep hands planted'
+										: 'Tracking arm extension',
+							signal: depth,
+						},
 						perf: createPerfSnapshot(inferenceSamples.current, fps, processedFrames.current, processingFpsRef.current),
 					});
 				}
 
 				if (canCount) {
+					commitTrackingDetail(
+						depth === null
+							? 'Keep shoulders and at least one wrist visible'
+							: wristsTraveling
+								? 'Keep hands planted'
+								: 'Tracking arm extension',
+					);
+					counterTrace.current.record({
+						atMs: now,
+						exercise,
+						state: currentPhase,
+						reason:
+							depth === null
+								? 'Keep shoulders and at least one wrist visible'
+								: wristsTraveling
+									? 'Keep hands planted'
+									: 'Tracking arm extension',
+						signal: depth,
+					});
 
 					// RepDetector drives the rep count (shoulder-height oscillation is
 					// the rep signal; survives elbow occlusion at the bottom).
@@ -429,9 +638,20 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 					if (smResult.completedRep) {
 						repHistory.current.push(smResult.completedRep);
 					}
-				} else if (now - lastBodyMs.current > P.LOST_TIMEOUT_MS) {
-					stateMachine.current.reset();
-					velocityTracker.current.reset();
+				} else {
+					counterTrace.current.record({
+						atMs: now,
+						exercise,
+						state: currentPhase,
+						reason: 'Get into push-up position',
+						signal: depth,
+					});
+					if (now - lastBodyMs.current > P.LOST_TIMEOUT_MS) {
+						commitTrackingDetail('Get into push-up position');
+						stateMachine.current.reset();
+						velocityTracker.current.reset();
+					}
+				}
 				}
 			}
 
@@ -453,15 +673,39 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 			} else if (tier === 'NO_BODY') {
 				coach = isRunningRef.current ? 'STAND_FACING_CAMERA' : 'NO_BODY';
 			} else if (!isRunningRef.current) {
-				coach = plankish ? 'READY' : 'NOT_IN_PLANK';
-			} else if (linesLost) {
+				coach = isSquatExercise
+					? squatMetrics
+						? 'READY'
+						: 'NOT_IN_SQUAT'
+					: isBandedSideStep
+						? squatMetrics
+							? 'READY'
+							: 'NOT_IN_SIDE_STEPS'
+						: plankish
+							? 'READY'
+							: 'NOT_IN_PLANK';
+			} else if (isLowerBodyExercise && !squatMetrics) {
+				coach = 'STAND_FACING_CAMERA';
+			} else if (!isLowerBodyExercise && linesLost) {
 				coach = 'STAND_FACING_CAMERA';
 			} else {
 				coach = now - armedAtMs.current < P.GO_DISPLAY_MS ? 'GO' : 'COUNTING';
 			}
 			commitCoach(coach, now);
 		},
-		[measure, commitCoach, pose, stop, resetDepthState],
+			[
+				measure,
+				commitCoach,
+				isBandedSideStep,
+				isLowerBodyExercise,
+				isSquatExercise,
+				pose,
+				publishSideStepTracking,
+				publishSquatTracking,
+				commitTrackingDetail,
+				stop,
+				resetDepthState,
+			],
 	);
 
 	const handleDetectionError = useCallback((error: DetectionError) => {
@@ -486,9 +730,13 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep }: UseP
 		pose,
 		signal,
 		repCount,
+		squatTracking,
+		sideStepTracking,
 		coachState,
 		isRunning,
 		debugInfo,
+		trackingDetail,
+		getCounterTrace: () => counterTrace.current.snapshot(),
 		initError,
 		androidPerformanceTier,
 		solution,
