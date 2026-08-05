@@ -1,5 +1,7 @@
 export { usePoseSession } from './hooks/usePoseSession';
 export type { UsePoseSessionConfig } from './hooks/usePoseSession';
+export { usePyramidSession } from './hooks/usePyramidSession';
+export type { PyramidPhase, PyramidSessionState } from './hooks/usePyramidSession';
 export type {
   FormViolation,
   JointStatus,

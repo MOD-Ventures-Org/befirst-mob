@@ -5,10 +5,18 @@ import {
 	getTotalPyramidReps,
 	MAX_LEVEL,
 	MIN_LEVEL,
+	PYRAMID_LEVEL_OPTIONS,
 } from '../pyramid';
 
 describe('pyramid helpers', () => {
 	describe('buildPyramidSequence', () => {
+		it('provides the three guided workouts shown in the app', () => {
+			expect(PYRAMID_LEVEL_OPTIONS).toEqual([3, 4, 5]);
+			expect(buildPyramidSequence(3)).toEqual([1, 2, 3, 2, 1]);
+			expect(buildPyramidSequence(4)).toEqual([1, 2, 3, 4, 3, 2, 1]);
+			expect(buildPyramidSequence(5)).toEqual([1, 2, 3, 4, 5, 4, 3, 2, 1]);
+		});
+
 		it('ascends to the level then descends back to 1 (doc §4)', () => {
 			expect(buildPyramidSequence(1)).toEqual([1]);
 			expect(buildPyramidSequence(2)).toEqual([1, 2, 1]);

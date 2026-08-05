@@ -16,10 +16,6 @@ export const PYRAMID_TIMING = {
 	// beat still totals 3 s (0.5 + 2.5).
 	SET_DONE_MS: 500,
 	REST_MS: 2500,
-	GO_GRACE_MS: 3000, // GO window after rest — no push-up triggers the start prompt
-	START_PROMPT_MS: 1000, // "Push Up or Quit" second chance after GO (1·0)
-	REP_PAUSE_MS: 3000, // ~3 s pause mid-set triggers the rep prompt
-	REP_PROMPT_MS: 2000, // "Push Up or Quit" countdown mid-set (2·1·0)
 	// Final-set celebration (🎉 ring + "Level N Unlocked!") held before the
 	// success screen; the recording keeps rolling so the moment ends up on video.
 	CELEBRATE_MS: 5000,
@@ -27,7 +23,15 @@ export const PYRAMID_TIMING = {
 
 export const MIN_LEVEL = 1;
 export const MAX_LEVEL = 8;
-export const DEFAULT_LEVEL = 8;
+export const DEFAULT_LEVEL = 3;
+
+/**
+ * The three guided workouts exposed in the app. The helpers below remain
+ * general-purpose so future programs can introduce additional levels without
+ * changing the session engine.
+ */
+export const PYRAMID_LEVEL_OPTIONS = [3, 4, 5] as const;
+export type PyramidLevel = (typeof PYRAMID_LEVEL_OPTIONS)[number];
 
 /**
  * Build the set sequence for a level: 1 → 2 → … → level → … → 2 → 1.

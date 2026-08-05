@@ -17,6 +17,8 @@
     "declarations.d.ts",
     "src/pose-module/index.ts",
     "src/pose-module/hooks/usePoseSession.ts",
+    "src/pose-module/hooks/usePyramidSession.ts",
+    "src/pose-module/pyramid/pyramid.ts",
     "src/pose-module/screens/components/DebugPanel.tsx",
     "src/pose-module/screens/components/PermissionPlaceholder.tsx",
     "src/pose-module/screens/components/SkiaSkeletonOverlay.tsx"
