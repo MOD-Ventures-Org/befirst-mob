@@ -1,9 +1,9 @@
 import { BandedSideStepDetector } from '../BandedSideStepDetector';
 import type { SquatMetrics } from '../../squats/squatMetrics';
 
-function frame(leftAnkleX = 100, rightAnkleX = 200, pelvisY = 420): SquatMetrics {
+function frame(leftAnkleX = 100, rightAnkleX = 200, pelvisY = 420, kneeAngle = 130): SquatMetrics {
 	return {
-		kneeAngle: 130,
+		kneeAngle,
 		stanceWidth: Math.abs(rightAnkleX - leftAnkleX) / 100,
 		pelvisY,
 		ankleY: 520,
@@ -38,6 +38,14 @@ describe('BandedSideStepDetector', () => {
 		const left = detector.update(frame(250, 100), 500);
 
 		expect(left.step).toEqual({ direction: 'left', totalSteps: 1 });
+	});
+
+	it('counts a modest outward step from a shallow athletic squat', () => {
+		const detector = new BandedSideStepDetector();
+		detector.update(frame(100, 200, 420, 150), 0);
+		const step = detector.update(frame(70, 200, 420, 150), 500);
+
+		expect(step.step).toEqual({ direction: 'left', totalSteps: 1 });
 	});
 
 	it('rearms once the trailing foot catches up even when the band keeps a wide stance', () => {

@@ -129,7 +129,15 @@ export class SquatDetector {
 				if (isBottom) this.enterBottom(nowMs);
 				break;
 			case 'BOTTOM':
-				if (atTop) {
+				// A rising ankle can be the start of a jump. Wait for the short
+				// confirmation window before treating a top position as a normal
+				// squat finish; otherwise jump frames are credited or discarded too
+				// early when their knee angle briefly reaches the top threshold.
+				if (
+					atTop &&
+					(this.jumpConfirmFrames === 0 ||
+						metrics.kneeAngle >= SQUAT_PARAMS.JUMP_CLEAR_TOP_KNEE_ANGLE)
+				) {
 					if (this.mode === 'standard') {
 						rep = this.count('standard', nowMs);
 					}
@@ -144,7 +152,11 @@ export class SquatDetector {
 				}
 				break;
 			case 'PULSE_UP':
-				if (atTop) {
+				if (
+					atTop &&
+					(this.jumpConfirmFrames === 0 ||
+						metrics.kneeAngle >= SQUAT_PARAMS.JUMP_CLEAR_TOP_KNEE_ANGLE)
+				) {
 					if (this.mode === 'standard') {
 						rep = this.count('standard', nowMs);
 					}
@@ -155,16 +167,22 @@ export class SquatDetector {
 					this.enterBottom(nowMs);
 				}
 				break;
-			case 'JUMP_AIR':
+			case 'JUMP_AIR': {
+				// MediaPipe often loses one ankle for the split second of landing.
+				// A confirmed take-off followed by a return to the top is still a
+				// valid jump, even when that single landing frame was unavailable.
+				const landingResolved =
+					this.jumpHasLanded || nowMs - this.jumpAirStartedAtMs >= SQUAT_PARAMS.JUMP_MAX_AIR_MS;
 				if (
 					atTop &&
-					(this.jumpHasLanded || nowMs - this.jumpAirStartedAtMs >= SQUAT_PARAMS.JUMP_MAX_AIR_MS)
+					landingResolved
 				) {
-					if (this.jumpHasLanded && this.mode === 'jump') rep = this.count('jump', nowMs);
+					if (this.mode === 'jump') rep = this.count('jump', nowMs);
 					this.setGroundAnkles(metrics);
 					this.state = 'TOP';
 				}
 				break;
+			}
 		}
 
 		const completedHold = this.updateHold(

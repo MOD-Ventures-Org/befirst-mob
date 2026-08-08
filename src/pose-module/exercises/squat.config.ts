@@ -1,23 +1,30 @@
 import type { ExerciseConfig, JointAngles } from '../types';
 
 export const SQUAT_PARAMS = {
-	// A pose score is noisy around ankles during fast movement. The detector's
-	// time-based tracking grace (rather than a very high per-frame threshold)
-	// protects against false counts without throwing away real jump frames.
-	JOINT_CONFIDENCE_MIN: 0.45,
-	TRACKING_GAP_MS: 300,
-	TOP_KNEE_ANGLE: 158,
-	BOTTOM_KNEE_ANGLE: 118,
-	BOTTOM_EXIT_KNEE_ANGLE: 132,
-	PULSE_UP_MIN_KNEE_ANGLE: 132,
-	PULSE_UP_MAX_KNEE_ANGLE: 150,
-	JUMP_MIN_ANKLE_LIFT_SW: 0.18,
-	JUMP_MIN_ANKLE_RISE_SPEED_SW_S: 0.45,
-	JUMP_MIN_LANDING_DESCENT_SW: 0.1,
-	JUMP_LANDING_MAX_LIFT_SW: 0.08,
+	// Feet and knees routinely receive lower landmark-confidence scores during
+	// squats and jumps. We keep the complete body requirement, but accept
+	// moderately confident joints and preserve detector state through a brief
+	// occlusion rather than repeatedly resetting a real rep.
+	JOINT_CONFIDENCE_MIN: 0.25,
+	TRACKING_GAP_MS: 800,
+	// Phone-facing landmarks flatten knee angles compared with a side view. The
+	// original deep-only thresholds left ordinary, controlled squats uncounted.
+	TOP_KNEE_ANGLE: 150,
+	// A clearly extended knee lets regular Squats finish even if one ankle
+	// briefly jitters upward. Near the regular top threshold we give the jump
+	// detector its two-frame confirmation window first.
+	JUMP_CLEAR_TOP_KNEE_ANGLE: 160,
+	BOTTOM_KNEE_ANGLE: 130,
+	BOTTOM_EXIT_KNEE_ANGLE: 140,
+	PULSE_UP_MIN_KNEE_ANGLE: 140,
+	PULSE_UP_MAX_KNEE_ANGLE: 148,
+	JUMP_MIN_ANKLE_LIFT_SW: 0.1,
+	JUMP_MIN_ANKLE_RISE_SPEED_SW_S: 0.25,
+	JUMP_MIN_LANDING_DESCENT_SW: 0.06,
+	JUMP_LANDING_MAX_LIFT_SW: 0.12,
 	JUMP_CONFIRM_FRAMES: 2,
-	JUMP_LANDING_CONFIRM_FRAMES: 2,
-	JUMP_MAX_AIR_MS: 1_400,
+	JUMP_LANDING_CONFIRM_FRAMES: 1,
+	JUMP_MAX_AIR_MS: 1_800,
 	MAX_TORSO_LEAN_DEG: 45,
 	MIN_REP_MS: 350,
 	MIN_BOTTOM_TO_PULSE_MS: 120,
