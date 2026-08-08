@@ -1,9 +1,19 @@
 import type { PoseDetectionResultBundle, ViewCoordinator } from 'react-native-mediapipe';
 
-import type { Joint, JointVisibility, PoseFrame, Skeleton, WorldSkeleton } from '../types';
+import type {
+	FootLandmarkName,
+	FootLandmarks,
+	FootVisibility,
+	Joint,
+	JointVisibility,
+	PoseFrame,
+	Skeleton,
+	WorldFootLandmarks,
+	WorldSkeleton,
+} from '../types';
 
 // MediaPipe PoseLandmarker landmark index for each skeleton joint.
-const JOINT_LANDMARK_INDEX: Record<keyof Skeleton, number> = {
+export const CORE_JOINT_LANDMARK_INDEX: Record<keyof Skeleton, number> = {
   nose: 0,
   leftEye: 2,
   rightEye: 5,
@@ -21,6 +31,16 @@ const JOINT_LANDMARK_INDEX: Record<keyof Skeleton, number> = {
   rightKnee: 26,
   leftAnkle: 27,
   rightAnkle: 28,
+};
+
+// These points are deliberately kept out of the rendered stick figure. They
+// feed lower-body movement signals only: heel/toe positions survive some ankle
+// jitter and let Jump Squats use the lowest visible point of each foot.
+export const FOOT_JOINT_LANDMARK_INDEX: Record<FootLandmarkName, number> = {
+	leftHeel: 29,
+	rightHeel: 30,
+	leftFootIndex: 31,
+	rightFootIndex: 32,
 };
 
 /**
@@ -48,19 +68,45 @@ export function toSkeleton(
   const normalized = {} as Skeleton;
   const world = worldLandmarks && worldLandmarks.length >= 33 ? ({} as WorldSkeleton) : undefined;
   const visibility = {} as JointVisibility;
+  const feet = {} as FootLandmarks;
+  const normalizedFeet = {} as FootLandmarks;
+  const worldFeet = worldLandmarks && worldLandmarks.length >= 33 ? ({} as WorldFootLandmarks) : undefined;
+  const footVisibility = {} as FootVisibility;
 
-  for (const joint of Object.keys(JOINT_LANDMARK_INDEX) as (keyof Skeleton)[]) {
-    const landmark = landmarks[JOINT_LANDMARK_INDEX[joint]];
+  for (const joint of Object.keys(CORE_JOINT_LANDMARK_INDEX) as (keyof Skeleton)[]) {
+    const landmark = landmarks[CORE_JOINT_LANDMARK_INDEX[joint]];
     skeleton[joint] = vc.convertPoint(frameDims, landmark);
     normalized[joint] = { x: landmark.x, y: landmark.y };
     if (world) {
-      const worldLandmark = worldLandmarks![JOINT_LANDMARK_INDEX[joint]];
+      const worldLandmark = worldLandmarks![CORE_JOINT_LANDMARK_INDEX[joint]];
       world[joint] = { x: worldLandmark.x, y: worldLandmark.y, z: worldLandmark.z };
     }
     visibility[joint] = landmark.visibility ?? landmark.presence ?? 1;
   }
 
-  return { skeleton, normalized, ...(world ? { world } : {}), visibility };
+  for (const joint of Object.keys(FOOT_JOINT_LANDMARK_INDEX) as FootLandmarkName[]) {
+		const landmark = landmarks[FOOT_JOINT_LANDMARK_INDEX[joint]];
+		feet[joint] = vc.convertPoint(frameDims, landmark);
+		normalizedFeet[joint] = { x: landmark.x, y: landmark.y };
+		if (worldFeet) {
+			const worldLandmark = worldLandmarks![FOOT_JOINT_LANDMARK_INDEX[joint]];
+			worldFeet[joint] = { x: worldLandmark.x, y: worldLandmark.y, z: worldLandmark.z };
+		}
+		footVisibility[joint] = landmark.visibility ?? landmark.presence ?? 1;
+	}
+
+  return {
+		skeleton,
+		normalized,
+		...(world ? { world } : {}),
+		visibility,
+		feet: {
+			skeleton: feet,
+			normalized: normalizedFeet,
+			...(worldFeet ? { world: worldFeet } : {}),
+			visibility: footVisibility,
+		},
+	};
 }
 
 export function toSkeletonFromImage(

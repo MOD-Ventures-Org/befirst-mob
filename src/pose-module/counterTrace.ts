@@ -10,6 +10,19 @@ export interface CounterTraceSample {
 	reason: string;
 	signal?: number | null;
 	trackingAgeMs?: number;
+	// Pose model and derived movement values only — never raw landmarks, camera
+	// frames, or video. This keeps the diagnostic safe to enable on a device.
+	modelTier?: string;
+	jump?: {
+		state: string;
+		leftFootRiseSW: number | null;
+		rightFootRiseSW: number | null;
+		pelvisRiseSW: number | null;
+		footRiseSpeedSWs: number | null;
+		pelvisRiseSpeedSWs: number | null;
+		leftFootConfidence: number | null;
+		rightFootConfidence: number | null;
+	};
 }
 
 export class CounterTraceRecorder {

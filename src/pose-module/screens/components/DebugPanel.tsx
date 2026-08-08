@@ -14,6 +14,10 @@ export function DebugPanel({ info }: Props) {
       <Text style={styles.text}>reps: {info?.repCount ?? 0}</Text>
       <Text style={styles.text}>fps: {info?.fps ?? 0}</Text>
       <Text style={styles.text}>proc: {info?.inferenceMs ?? 0}ms</Text>
+			<Text style={styles.text}>model: {info?.poseModelTier ?? '—'}</Text>
+			{info?.poseModelTier === 'heavy' && (
+				<Text style={styles.text}>heavy benchmark: {info.heavyModelBenchmarkPassed ? 'pass' : 'collecting/fail'}</Text>
+			)}
       <Text style={styles.text}>
         conf: {info?.conf !== undefined ? info.conf.toFixed(2) : '—'} (min{' '}
         {info?.minConf !== undefined ? info.minConf.toFixed(2) : '—'})

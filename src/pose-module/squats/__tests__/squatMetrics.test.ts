@@ -1,5 +1,5 @@
 import { hasTrackableSquatBody, measureSquat } from '../squatMetrics';
-import type { JointVisibility, Skeleton } from '../../types';
+import type { FootLandmarks, FootVisibility, JointVisibility, Skeleton } from '../../types';
 
 const skeleton: Skeleton = {
 	nose: { x: 50, y: 10 },
@@ -25,6 +25,20 @@ function visibility(value: number): JointVisibility {
 	return Object.fromEntries(Object.keys(skeleton).map(joint => [joint, value])) as JointVisibility;
 }
 
+const feet: FootLandmarks = {
+	leftHeel: { x: 16, y: 286 },
+	rightHeel: { x: 84, y: 288 },
+	leftFootIndex: { x: 20, y: 296 },
+	rightFootIndex: { x: 80, y: 294 },
+};
+
+const footVisibility: FootVisibility = {
+	leftHeel: 0.9,
+	rightHeel: 0.9,
+	leftFootIndex: 0.9,
+	rightFootIndex: 0.9,
+};
+
 describe('squat metrics', () => {
 	it('keeps a full lower body trackable at moderate ankle and knee confidence', () => {
 		const moderateConfidence = visibility(0.3);
@@ -35,5 +49,31 @@ describe('squat metrics', () => {
 
 	it('still rejects genuinely unreliable lower-body landmarks', () => {
 		expect(hasTrackableSquatBody(visibility(0.2))).toBe(false);
+	});
+
+	it('uses the lowest confidently tracked heel/toe point for each foot', () => {
+		const metrics = measureSquat(skeleton, visibility(0.9), { skeleton: feet, visibility: footVisibility });
+
+		expect(metrics).toMatchObject({
+			leftFootY: 296,
+			rightFootY: 294,
+			leftFootConfidence: 0.9,
+			rightFootConfidence: 0.9,
+		});
+	});
+
+	it('falls back to ankle coordinates when heel and toe confidence is low', () => {
+		const lowFootConfidence: FootVisibility = {
+			leftHeel: 0.1,
+			rightHeel: 0.1,
+			leftFootIndex: 0.1,
+			rightFootIndex: 0.1,
+		};
+		const metrics = measureSquat(skeleton, visibility(0.9), {
+			skeleton: feet,
+			visibility: lowFootConfidence,
+		});
+
+		expect(metrics).toMatchObject({ leftFootY: 280, rightFootY: 280 });
 	});
 });

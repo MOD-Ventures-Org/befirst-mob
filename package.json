@@ -9,6 +9,7 @@
     "ios": "expo run:ios --device",
     "prebuild": "expo prebuild",
     "fetch:model": "node scripts/fetch-mediapipe-model.mjs",
+    "benchmark:model:heavy": "node scripts/fetch-mediapipe-model.mjs heavy",
     "typecheck": "tsc --noEmit",
     "test": "jest --runInBand"
   },

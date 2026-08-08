@@ -14,11 +14,12 @@ import { bodyExtension, worldArmExtension } from '../geometry';
 import { SkeletonOneEuro } from '../oneEuro';
 import { addPerfSample, createPerfSampleBuffer, createPerfSnapshot, resetPerfSampleBuffer } from '../perfMetrics';
 import { displayTier, shouldersPresent, tooClose } from '../plausibility';
+import { heavyModelPassesBenchmark } from '../poseModelBenchmark';
 import { PoseStabilizer } from '../poseStabilizer';
 import { isUprightExtended } from '../posture';
 import { RepDetector } from '../repDetector';
 import { computeAngles } from '../services/AngleCalculator';
-import { useCameraService } from '../services/CameraService';
+import { POSE_MODEL_NAME, useCameraService } from '../services/CameraService';
 import { FormChecker } from '../services/FormChecker';
 import { toSkeleton } from '../services/PoseDetector';
 import { VelocityTracker } from '../services/VelocityTracker';
@@ -59,6 +60,10 @@ const COACH_UI_THROTTLE_MS = 250;
 // The live hold clock needs to feel responsive, without pushing camera-frame
 // updates through React.
 const SQUAT_UI_THROTTLE_MS = 100;
+
+// POSE_MODEL is pinned to Full in the release source, but benchmark builds
+// intentionally replace that compile-time setting with Heavy.
+const isHeavyBenchmarkModel = (modelTier: string): boolean => modelTier === 'heavy';
 
 // The five lines that must stay on screen while counting: shoulder bridge +
 // both upper arms + both forearms → these six joints.
@@ -427,7 +432,13 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 			// Rendering uses the One Euro-filtered skeleton. Exercise metrics must
 			// use raw landmarks: visual smoothing otherwise delays and flattens the
 			// exact high-velocity portion of a jump or side step.
-			const squatMetrics = isLowerBodyExercise ? measureSquat(frame.skeleton, frame.visibility) : null;
+			const squatMetrics = isLowerBodyExercise
+				? measureSquat(
+						frame.skeleton,
+						frame.visibility,
+						frame.feet ? { skeleton: frame.feet.skeleton, visibility: frame.feet.visibility } : undefined,
+					)
+				: null;
 			if (squatMetrics) lastLowerBodyTrackedMs.current = now;
 
 			// --- Push-up signal: world-space arm extension first, 2-D fallback ---
@@ -475,7 +486,40 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 						reason: squatUpdate.status,
 						signal: squatMetrics?.kneeAngle ?? null,
 						trackingAgeMs: Math.max(0, now - lastLowerBodyTrackedMs.current),
+						modelTier: POSE_MODEL_NAME,
+						...(squatUpdate.jumpDiagnostics ? { jump: squatUpdate.jumpDiagnostics } : {}),
 					});
+					if (P.DEBUG_HUD && now - lastDebugMs.current >= DEBUG_THROTTLE_MS) {
+						lastDebugMs.current = now;
+						const perf = createPerfSnapshot(
+							inferenceSamples.current,
+							fps,
+							processedFrames.current,
+							processingFpsRef.current,
+						);
+						setDebugInfo({
+							fps,
+							inferenceMs: results.inferenceTime,
+							landmarksDetected: true,
+							conf: meanConf,
+							minConf: visValues.length > 0 ? Math.min(...visValues) : 0,
+							coach: coachRef.current,
+							tier,
+							repCount: squatUpdate.totalReps,
+							counter: {
+								exercise,
+								state: squatUpdate.jumpDiagnostics?.state ?? squatUpdate.activeVariant ?? 'tracking',
+								reason: squatUpdate.status,
+								signal: squatMetrics?.kneeAngle ?? null,
+								trackingAgeMs: Math.max(0, now - lastLowerBodyTrackedMs.current),
+							},
+							perf,
+							poseModelTier: POSE_MODEL_NAME,
+							...(isHeavyBenchmarkModel(POSE_MODEL_NAME)
+								? { heavyModelBenchmarkPassed: heavyModelPassesBenchmark(perf) }
+								: {}),
+						});
+					}
 
 					if (squatUpdate.rep) {
 						repCountRef.current = squatUpdate.totalReps;

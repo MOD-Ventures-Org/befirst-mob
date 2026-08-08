@@ -33,6 +33,21 @@ export interface Skeleton {
   rightAnkle: Joint;
 }
 
+// The rendered Skeleton intentionally stops at the ankle. Extra lower-foot
+// landmarks travel beside it on PoseFrame so existing rendering/form code
+// cannot accidentally depend on a new optional point.
+export interface FootLandmarks {
+	leftHeel: Joint;
+	rightHeel: Joint;
+	leftFootIndex: Joint;
+	rightFootIndex: Joint;
+}
+
+export type FootLandmarkName = keyof FootLandmarks;
+
+export type FootVisibility = Record<FootLandmarkName, number>;
+export type WorldFootLandmarks = Record<FootLandmarkName, WorldJoint>;
+
 export type WorldSkeleton = Record<keyof Skeleton, WorldJoint>;
 
 // Per-joint MediaPipe visibility/presence confidence in [0, 1].
@@ -48,6 +63,12 @@ export interface PoseFrame {
 	// optional preserves a safe 2-D fallback for older builds.
 	world?: WorldSkeleton;
 	visibility: JointVisibility;
+	feet?: {
+		skeleton: FootLandmarks;
+		normalized: FootLandmarks;
+		world?: WorldFootLandmarks;
+		visibility: FootVisibility;
+	};
 }
 
 // What the overlay is allowed to draw this frame (spec §9.1).
@@ -142,6 +163,8 @@ export interface DebugInfo {
 		trackingAgeMs?: number;
 	};
 	perf?: PerfSnapshot;
+	poseModelTier?: string;
+	heavyModelBenchmarkPassed?: boolean;
   // Live per-condition checklist for the debug overlay (diagnostics only).
   gateChecks?: {
     standing: Array<{ label: string; value: string; ok: boolean }>;

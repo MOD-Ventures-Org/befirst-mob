@@ -1,5 +1,12 @@
 import type { ExerciseConfig, JointAngles, JointVelocities, Skeleton } from '../types';
 
+export type PoseModelTier = 'lite' | 'full' | 'heavy';
+
+// Production is pinned to Full. To make a developer-only Heavy benchmark
+// build, change this one compile-time constant to 'heavy' after running
+// `pnpm run benchmark:model:heavy`; it must never be switched mid-workout.
+export const POSE_MODEL_TIER: PoseModelTier = 'full';
+
 // ---------------------------------------------------------------------------
 // PUSHUP_PARAMS — tunable constants for the new pipeline (smoothing, depth
 // signal, rep detector, plausibility, coaching). Single source of truth.
@@ -117,9 +124,10 @@ export const PUSHUP_PARAMS = {
   PRESENCE_CONF: 0.6,
   TRACKING_CONF: 0.6,
 
-  // Pose landmarker model tier. All three are bundled in the app assets:
-  // 'lite' = fastest inference, 'full' = balanced, 'heavy' = most accurate.
-  POSE_MODEL: 'full' as 'lite' | 'full' | 'heavy',
+  // Release default. The Heavy model is bundled only for developer benchmark
+  // builds and may be promoted after it passes poseModelBenchmark.ts on target
+  // devices; users never switch models during a workout.
+  POSE_MODEL: POSE_MODEL_TIER,
 
   // Debug HUD (FPS / inference time / delegate / model). Keep it off while
   // exercising; flip this constant temporarily when profiling a device.
