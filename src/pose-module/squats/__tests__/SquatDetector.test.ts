@@ -71,29 +71,57 @@ describe('SquatDetector', () => {
 		expect(update.repCounts.jump).toBe(0);
 	});
 
+	it('does not classify a small rise out of the squat as a jump', () => {
+		const detector = new SquatDetector('jump');
+		calibrateJumpDetector(detector);
+		detector.update(frame(128, 420, 520), 800);
+		detector.update(frame(145, 350, 490), 900);
+		const partialRise = detector.update(frame(150, 330, 485), 1_000);
+
+		expect(partialRise.rep).toBeUndefined();
+		expect(partialRise.jumpDiagnostics?.state).not.toBe('airborne');
+	});
+
 	it('credits a clear Jump Squat after calibrated takeoff and landing windows', () => {
 		const detector = new SquatDetector('jump');
 		calibrateJumpDetector(detector);
 		detector.update(frame(128, 420, 520), 800);
 		detector.update(frame(128, 380, 510), 900);
-		detector.update(frame(128, 260, 480), 1_000); // takeoff starts
-		detector.update(frame(145, 230, 470), 1_100); // 100 ms airborne confirmation
-		detector.update(frame(145, 330, 500), 1_200); // landing starts
-		const landing = detector.update(frame(152, 330, 500), 1_300); // 100 ms landing confirmation
+		detector.update(frame(152, 260, 480), 1_000); // takeoff starts at phone-facing top angle
+		const airborne = detector.update(frame(152, 230, 470), 1_100); // 100 ms airborne confirmation
+		detector.update(frame(152, 280, 490), 1_200); // descending arc starts
+		const landing = detector.update(frame(152, 330, 500), 1_300); // 100 ms descent confirmation
 
+		expect(airborne.rep).toBeUndefined();
 		expect(landing.rep).toEqual({ variant: 'jump', totalReps: 1 });
 		expect(landing.repCounts.jump).toBe(1);
+	});
+
+	it('keeps the jump baseline briefly after standing so late peak lift can arm takeoff', () => {
+		const detector = new SquatDetector('jump');
+		calibrateJumpDetector(detector);
+		detector.update(frame(128, 420, 520), 800);
+		const firstTopFrame = detector.update(frame(152, 310, 495), 1_000); // not lifted enough yet
+		detector.update(frame(152, 250, 480), 1_120); // peak lift arrives after knee extension
+		const airborne = detector.update(frame(152, 230, 470), 1_220);
+		detector.update(frame(152, 280, 490), 1_320);
+		const landing = detector.update(frame(152, 330, 500), 1_420);
+
+		expect(firstTopFrame.jumpDiagnostics?.state).toBe('armed');
+		expect(airborne.jumpDiagnostics?.state).toBe('airborne');
+		expect(landing.rep).toEqual({ variant: 'jump', totalReps: 1 });
 	});
 
 	it('uses timestamps, not frame counts, when inference is slow or frames are dropped', () => {
 		const detector = new SquatDetector('jump');
 		calibrateJumpDetector(detector);
 		detector.update(frame(128, 420, 520), 800);
-		detector.update(frame(128, 260, 480), 1_000); // takeoff begins
-		detector.update(frame(145, 220, 470), 1_200); // 200 ms later: airborne
-		detector.update(frame(145, 330, 500), 1_400); // landing begins
-		const landing = detector.update(frame(152, 330, 500), 1_600); // 200 ms landed
+		detector.update(frame(166, 260, 480), 1_000); // takeoff begins
+		const airborne = detector.update(frame(166, 220, 470), 1_200); // 200 ms later: airborne
+		detector.update(frame(166, 280, 490), 1_400); // descent begins
+		const landing = detector.update(frame(152, 330, 500), 1_600); // 200 ms later: confirmed
 
+		expect(airborne.rep).toBeUndefined();
 		expect(landing.rep).toEqual({ variant: 'jump', totalReps: 1 });
 	});
 
@@ -101,25 +129,41 @@ describe('SquatDetector', () => {
 		const detector = new SquatDetector('jump');
 		calibrateJumpDetector(detector);
 		detector.update(frame(128, 420, 520), 800);
-		detector.update(frame(128, 260, 480), 1_000);
-		detector.update(frame(145, 230, 470), 1_100); // airborne
+		detector.update(frame(166, 260, 480), 1_000);
+		const airborne = detector.update(frame(166, 230, 470), 1_100); // airborne
 		detector.gap(1_280); // 180 ms: inside the 250 ms jump tracking allowance
-		detector.update(frame(145, 330, 500), 1_300);
+		detector.update(frame(166, 280, 490), 1_300);
 		const landing = detector.update(frame(152, 330, 500), 1_400);
 
+		expect(airborne.rep).toBeUndefined();
 		expect(landing.rep).toEqual({ variant: 'jump', totalReps: 1 });
 	});
 
-	it('clears an incomplete airborne event after a longer foot-tracking gap', () => {
+	it('does not count an unverified jump when landing landmarks stay lost', () => {
 		const detector = new SquatDetector('jump');
 		calibrateJumpDetector(detector);
 		detector.update(frame(128, 420, 520), 800);
-		detector.update(frame(128, 260, 480), 1_000);
-		detector.update(frame(145, 230, 470), 1_100);
+		detector.update(frame(166, 260, 480), 1_000);
+		detector.update(frame(166, 230, 470), 1_100);
 		const update = detector.gap(1_400);
 
 		expect(update.repCounts.jump).toBe(0);
 		expect(update.status).toContain('Feet lost during jump');
+	});
+
+	it('does not turn a regular squat ascent with foot drift into a Jump Squat', () => {
+		const detector = new SquatDetector('jump');
+		calibrateJumpDetector(detector);
+		detector.update(frame(128, 420, 520), 800);
+		detector.update(frame(166, 260, 480), 1_000); // apparent takeoff begins
+		const airborne = detector.update(frame(166, 230, 470), 1_100); // may satisfy lift evidence
+		const settledAtTop = detector.update(frame(170, 300, 470), 1_300); // no fall from the apparent peak
+		const timeout = detector.update(frame(170, 300, 470), 3_000);
+
+		expect(airborne.rep).toBeUndefined();
+		expect(settledAtTop.rep).toBeUndefined();
+		expect(timeout.repCounts.jump).toBe(0);
+		expect(timeout.jumpDiagnostics?.state).toBe('ready');
 	});
 
 	it('keeps a regular squat state through a brief landmark dropout', () => {
@@ -136,9 +180,9 @@ describe('SquatDetector', () => {
 		const detector = new SquatDetector('standard');
 		detector.update(frame(170, 300, 500), 0);
 		detector.update(frame(128, 420, 520), 500);
-		detector.update(frame(128, 260, 480), 700);
-		detector.update(frame(145, 230, 470), 800);
-		detector.update(frame(145, 330, 500), 900);
+		detector.update(frame(166, 260, 480), 700);
+		detector.update(frame(166, 230, 470), 800);
+		detector.update(frame(166, 280, 490), 900);
 		const update = detector.update(frame(152, 330, 500), 1_000);
 
 		expect(update.rep).toBeUndefined();

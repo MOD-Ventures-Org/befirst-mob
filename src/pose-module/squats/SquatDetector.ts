@@ -105,6 +105,7 @@ export class SquatDetector {
 	private calibrationStartedAtMs: number | null = null;
 	private calibrationSamples: GroundBaseline[] = [];
 	private takeoffEvidenceSinceMs: number | null = null;
+	private jumpTopReachedAtMs: number | null = null;
 	private landingEvidenceSinceMs: number | null = null;
 	private jumpAirStartedAtMs = 0;
 	private maxFootRiseSW = 0;
@@ -130,10 +131,10 @@ export class SquatDetector {
 		const isBottom = metrics.kneeAngle <= SQUAT_PARAMS.BOTTOM_KNEE_ANGLE;
 		const remainsLow = metrics.kneeAngle <= SQUAT_PARAMS.BOTTOM_EXIT_KNEE_ANGLE;
 		const atTop = metrics.kneeAngle >= SQUAT_PARAMS.TOP_KNEE_ANGLE;
+		if (!atTop) this.jumpTopReachedAtMs = null;
 		const jumpSignals = this.measureJumpSignals(metrics, nowMs);
-
 		if (this.state === 'BOTTOM' || this.state === 'PULSE_UP') {
-			this.updateTakeoffEvidence(jumpSignals, nowMs);
+			this.updateTakeoffEvidence(jumpSignals, metrics.kneeAngle, nowMs);
 		} else if (this.state === 'JUMP_AIR') {
 			this.updateLandingEvidence(jumpSignals, nowMs);
 		}
@@ -170,6 +171,7 @@ export class SquatDetector {
 				break;
 			case 'BOTTOM':
 				if (atTop && this.takeoffEvidenceSinceMs === null) {
+					if (this.holdTopForJumpTakeoff(nowMs)) break;
 					if (this.mode === 'standard') rep = this.count('standard', nowMs);
 					this.setGroundBaseline(metrics);
 					this.state = 'TOP';
@@ -183,6 +185,7 @@ export class SquatDetector {
 				break;
 			case 'PULSE_UP':
 				if (atTop && this.takeoffEvidenceSinceMs === null) {
+					if (this.holdTopForJumpTakeoff(nowMs)) break;
 					if (this.mode === 'standard') rep = this.count('standard', nowMs);
 					this.setGroundBaseline(metrics);
 					this.state = 'TOP';
@@ -196,6 +199,9 @@ export class SquatDetector {
 					this.landingEvidenceSinceMs !== null &&
 					nowMs - this.landingEvidenceSinceMs >= SQUAT_PARAMS.JUMP_LANDING_CONFIRM_MS
 				) {
+					// Count after the confirmed airborne arc begins descending. Unlike a
+					// ground-contact test, this remains robust when one ankle is hidden
+					// at landing; unlike takeoff alone, it rejects normal squat ascents.
 					if (this.mode === 'jump') rep = this.count('jump', nowMs);
 					this.setGroundBaseline(metrics);
 					this.clearJumpEvent();
@@ -349,13 +355,24 @@ export class SquatDetector {
 	private enterBottom(nowMs: number): void {
 		this.state = 'BOTTOM';
 		this.bottomStartedAtMs = nowMs;
+		this.jumpTopReachedAtMs = null;
 		this.clearJumpEvent();
 	}
 
 	private setGroundBaseline(metrics: SquatMetrics): void {
 		this.ground = this.baselineSample(metrics);
+		this.jumpTopReachedAtMs = null;
 		this.previousJumpSample = null;
 		this.lastJumpSignals = null;
+	}
+
+	private holdTopForJumpTakeoff(nowMs: number): boolean {
+		if (this.mode !== 'jump') return false;
+		if (this.jumpTopReachedAtMs === null) {
+			this.jumpTopReachedAtMs = nowMs;
+			return true;
+		}
+		return nowMs - this.jumpTopReachedAtMs < SQUAT_PARAMS.JUMP_TAKEOFF_WINDOW_MS;
 	}
 
 	private baselineSample(metrics: SquatMetrics): GroundBaseline {
@@ -398,18 +415,23 @@ export class SquatDetector {
 		return this.lastJumpSignals;
 	}
 
-	private updateTakeoffEvidence(signals: JumpSignals | null, nowMs: number): void {
+	private updateTakeoffEvidence(
+		signals: JumpSignals | null,
+		kneeAngle: number,
+		nowMs: number,
+	): void {
 		if (!signals || !this.ground) return;
 		const bothFeetRisen =
 			signals.leftFootRiseSW >= SQUAT_PARAMS.JUMP_MIN_FOOT_RISE_SW &&
 			signals.rightFootRiseSW >= SQUAT_PARAMS.JUMP_MIN_FOOT_RISE_SW;
-		const oneFootWithPelvisRise =
-			Math.max(signals.leftFootRiseSW, signals.rightFootRiseSW) >= SQUAT_PARAMS.JUMP_MIN_FOOT_RISE_SW &&
-			signals.pelvisRiseSW >= SQUAT_PARAMS.JUMP_MIN_PELVIS_RISE_SW;
 		const movingUp =
 			signals.footRiseSpeedSWs >= SQUAT_PARAMS.JUMP_MIN_RISE_SPEED_SW_S ||
 			signals.pelvisRiseSpeedSWs >= SQUAT_PARAMS.JUMP_MIN_RISE_SPEED_SW_S;
-		const isTakeoffEvidence = (bothFeetRisen || oneFootWithPelvisRise) && movingUp;
+		const isTakeoffEvidence =
+			kneeAngle >= SQUAT_PARAMS.JUMP_TAKEOFF_KNEE_ANGLE &&
+			bothFeetRisen &&
+			signals.pelvisRiseSW >= SQUAT_PARAMS.JUMP_MIN_PELVIS_RISE_SW &&
+			movingUp;
 
 		if (!isTakeoffEvidence) {
 			this.takeoffEvidenceSinceMs = null;
@@ -432,14 +454,12 @@ export class SquatDetector {
 		if (!signals) return;
 		const averageFootRiseSW = (signals.leftFootRiseSW + signals.rightFootRiseSW) / 2;
 		this.maxFootRiseSW = Math.max(this.maxFootRiseSW, averageFootRiseSW);
-		const feetNearGround =
-			signals.leftFootRiseSW <= SQUAT_PARAMS.JUMP_LANDING_MAX_LIFT_SW &&
-			signals.rightFootRiseSW <= SQUAT_PARAMS.JUMP_LANDING_MAX_LIFT_SW;
-		const returnedFromPeak = this.maxFootRiseSW - averageFootRiseSW >= SQUAT_PARAMS.JUMP_MIN_RETURN_FROM_PEAK_SW;
-		const movingDownOrSettled =
-			signals.footRiseSpeedSWs <= SQUAT_PARAMS.JUMP_MIN_RISE_SPEED_SW_S ||
-			signals.pelvisRiseSpeedSWs <= SQUAT_PARAMS.JUMP_MIN_RISE_SPEED_SW_S;
-		const isLandingEvidence = feetNearGround && returnedFromPeak && movingDownOrSettled;
+		const descendedFromPeak =
+			this.maxFootRiseSW - averageFootRiseSW >= SQUAT_PARAMS.JUMP_MIN_DESCENT_FROM_PEAK_SW;
+		const movingDown =
+			signals.footRiseSpeedSWs <= -SQUAT_PARAMS.JUMP_MIN_FALL_SPEED_SW_S ||
+			signals.pelvisRiseSpeedSWs <= -SQUAT_PARAMS.JUMP_MIN_FALL_SPEED_SW_S;
+		const isLandingEvidence = descendedFromPeak && movingDown;
 
 		if (!isLandingEvidence) {
 			this.landingEvidenceSinceMs = null;
@@ -450,6 +470,7 @@ export class SquatDetector {
 
 	private clearJumpEvent(): void {
 		this.takeoffEvidenceSinceMs = null;
+		this.jumpTopReachedAtMs = null;
 		this.landingEvidenceSinceMs = null;
 		this.jumpAirStartedAtMs = 0;
 		this.maxFootRiseSW = 0;

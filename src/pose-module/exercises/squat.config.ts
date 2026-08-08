@@ -22,13 +22,27 @@ export const SQUAT_PARAMS = {
 	// camera FPS varies considerably across phones and can dip during take-off.
 	JUMP_CALIBRATION_MS: 600,
 	JUMP_TAKEOFF_CONFIRM_MS: 80,
+	// After the knees first reach the phone-facing "top" estimate, retain the
+	// squat baseline briefly. A real jump's highest foot displacement often
+	// lands 1–2 processed frames after knee extension.
+	JUMP_TAKEOFF_WINDOW_MS: 240,
 	JUMP_LANDING_CONFIRM_MS: 80,
 	JUMP_TRACKING_GAP_MS: 250,
-	JUMP_MIN_FOOT_RISE_SW: 0.08,
-	JUMP_MIN_PELVIS_RISE_SW: 0.06,
-	JUMP_MIN_RISE_SPEED_SW_S: 0.18,
-	JUMP_MIN_RETURN_FROM_PEAK_SW: 0.05,
-	JUMP_LANDING_MAX_LIFT_SW: 0.12,
+	// Rising out of a squat can move the estimated feet by a few pixels. Do
+	// not arm takeoff until the knees are nearly straight and the foot/hip rise
+	// is large enough to be a real leave-the-floor movement.
+	// A front camera routinely estimates a fully extended knee near the shared
+	// top threshold rather than anatomical 180°. Foot/hip lift and velocity are
+	// still required, so this does not turn an ordinary squat into a jump.
+	JUMP_TAKEOFF_KNEE_ANGLE: 150,
+	JUMP_MIN_FOOT_RISE_SW: 0.18,
+	JUMP_MIN_PELVIS_RISE_SW: 0.1,
+	JUMP_MIN_RISE_SPEED_SW_S: 0.35,
+	// A real jump has an airborne arc: after takeoff, the feet/hips must begin
+	// descending from their peak. This is intentionally not a strict "feet back
+	// on ground" check, which is often lost by a phone camera at landing.
+	JUMP_MIN_DESCENT_FROM_PEAK_SW: 0.05,
+	JUMP_MIN_FALL_SPEED_SW_S: 0.12,
 	JUMP_MAX_AIR_MS: 1_800,
 	MAX_TORSO_LEAN_DEG: 45,
 	MIN_REP_MS: 350,
