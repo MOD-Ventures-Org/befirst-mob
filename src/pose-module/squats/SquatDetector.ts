@@ -61,7 +61,7 @@ export interface SquatUpdate extends SquatTrackingState {
 	completedHold?: SquatHold;
 }
 
-type MovementState = 'INIT' | 'CALIBRATING' | 'TOP' | 'BOTTOM' | 'PULSE_UP' | 'JUMP_AIR';
+type MovementState = 'INIT' | 'TOP' | 'BOTTOM' | 'PULSE_UP' | 'JUMP_AIR';
 type BaseSquatVariant = Exclude<SquatVariant, 'pulse'>;
 
 interface GroundBaseline {
@@ -91,7 +91,7 @@ const EMPTY_COUNTS: SquatRepCounts = { standard: 0, jump: 0, pulse: 0 };
 
 /**
  * Tracks full squats, Jump Squats, bottom-range pulses, and settled bottom
- * holds. Jump Squats use a calibrated, timestamp-driven event timeline:
+ * holds. Jump Squats use a timestamp-driven event timeline:
  * squat bottom -> sustained takeoff -> airborne -> sustained landing.
  */
 export class SquatDetector {
@@ -102,8 +102,6 @@ export class SquatDetector {
 	private lastRepMs = 0;
 	private bottomStartedAtMs = 0;
 	private ground: GroundBaseline | null = null;
-	private calibrationStartedAtMs: number | null = null;
-	private calibrationSamples: GroundBaseline[] = [];
 	private takeoffEvidenceSinceMs: number | null = null;
 	private jumpTopReachedAtMs: number | null = null;
 	private landingEvidenceSinceMs: number | null = null;
@@ -119,12 +117,14 @@ export class SquatDetector {
 	private holdVariant: BaseSquatVariant = 'standard';
 	private holds: SquatHold[] = [];
 	private nextHoldId = 1;
-	private status = 'Stand tall to calibrate';
+	private status = 'Get your full body in frame';
 
 	update(metrics: SquatMetrics, nowMs: number): SquatUpdate {
 		this.lastMetricsAtMs = nowMs;
 		const pelvisSpeed = this.pelvisSpeed(metrics, nowMs);
-		if (metrics.torsoLean > SQUAT_PARAMS.MAX_TORSO_LEAN_DEG) {
+		const maxTorsoLean =
+			this.mode === 'jump' ? SQUAT_PARAMS.JUMP_MAX_TORSO_LEAN_DEG : SQUAT_PARAMS.MAX_TORSO_LEAN_DEG;
+		if (metrics.torsoLean > maxTorsoLean) {
 			return this.pause(nowMs, 'Face the camera and keep your torso upright');
 		}
 
@@ -143,27 +143,17 @@ export class SquatDetector {
 		switch (this.state) {
 			case 'INIT':
 				if (this.mode === 'jump') {
-					if (atTop) this.beginCalibration(metrics, nowMs);
+					// The first valid frame supplies a provisional ground reference. Feet
+					// are still planted at both standing and squat bottom, so a replay can
+					// begin mid-rep without permanently missing its first jump.
+					this.setGroundBaseline(metrics, nowMs);
+					if (isBottom) this.enterBottom(nowMs);
+					else this.state = 'TOP';
 				} else if (atTop) {
-					this.setGroundBaseline(metrics);
+					this.setGroundBaseline(metrics, nowMs);
 					this.state = 'TOP';
 				} else if (isBottom) {
 					this.enterBottom(nowMs);
-				}
-				break;
-			case 'CALIBRATING':
-				if (!atTop) {
-					this.resetCalibration();
-					this.state = 'INIT';
-				} else {
-					this.recordCalibrationSample(metrics);
-					if (
-						this.calibrationStartedAtMs !== null &&
-						nowMs - this.calibrationStartedAtMs >= SQUAT_PARAMS.JUMP_CALIBRATION_MS
-					) {
-						this.completeCalibration(metrics);
-						this.state = 'TOP';
-					}
 				}
 				break;
 			case 'TOP':
@@ -173,7 +163,7 @@ export class SquatDetector {
 				if (atTop && this.takeoffEvidenceSinceMs === null) {
 					if (this.holdTopForJumpTakeoff(nowMs)) break;
 					if (this.mode === 'standard') rep = this.count('standard', nowMs);
-					this.setGroundBaseline(metrics);
+					this.setGroundBaseline(metrics, nowMs);
 					this.state = 'TOP';
 				} else if (
 					metrics.kneeAngle >= SQUAT_PARAMS.PULSE_UP_MIN_KNEE_ANGLE &&
@@ -187,7 +177,7 @@ export class SquatDetector {
 				if (atTop && this.takeoffEvidenceSinceMs === null) {
 					if (this.holdTopForJumpTakeoff(nowMs)) break;
 					if (this.mode === 'standard') rep = this.count('standard', nowMs);
-					this.setGroundBaseline(metrics);
+					this.setGroundBaseline(metrics, nowMs);
 					this.state = 'TOP';
 				} else if (isBottom) {
 					if (this.mode === 'standard') rep = this.count('pulse', nowMs);
@@ -203,7 +193,7 @@ export class SquatDetector {
 					// ground-contact test, this remains robust when one ankle is hidden
 					// at landing; unlike takeoff alone, it rejects normal squat ascents.
 					if (this.mode === 'jump') rep = this.count('jump', nowMs);
-					this.setGroundBaseline(metrics);
+					this.setGroundBaseline(metrics, nowMs);
 					this.clearJumpEvent();
 					this.state = 'TOP';
 				} else if (nowMs - this.jumpAirStartedAtMs >= SQUAT_PARAMS.JUMP_MAX_AIR_MS) {
@@ -247,7 +237,6 @@ export class SquatDetector {
 	pause(nowMs: number, reason = 'Tracking lost — keep your full body in frame'): SquatUpdate {
 		this.state = 'INIT';
 		this.resetMotionSamples();
-		this.resetCalibration();
 		this.clearJumpEvent();
 		this.status = reason;
 		const completedHold = this.updateHold(false, 'standard', nowMs);
@@ -257,7 +246,6 @@ export class SquatDetector {
 	finish(nowMs: number): SquatUpdate {
 		this.state = 'INIT';
 		this.resetMotionSamples();
-		this.resetCalibration();
 		this.clearJumpEvent();
 		this.status = 'Session finished';
 		return this.buildUpdate(nowMs, undefined, this.completeHold());
@@ -269,7 +257,6 @@ export class SquatDetector {
 		this.lastRepMs = 0;
 		this.bottomStartedAtMs = 0;
 		this.ground = null;
-		this.resetCalibration();
 		this.clearJumpEvent();
 		this.resetMotionSamples();
 		this.lastMetricsAtMs = 0;
@@ -278,7 +265,7 @@ export class SquatDetector {
 		this.holdVariant = 'standard';
 		this.holds = [];
 		this.nextHoldId = 1;
-		this.status = 'Stand tall to calibrate';
+		this.status = 'Get your full body in frame';
 	}
 
 	snapshot(nowMs = Date.now()): SquatTrackingState {
@@ -319,39 +306,6 @@ export class SquatDetector {
 		return speed;
 	}
 
-	private beginCalibration(metrics: SquatMetrics, nowMs: number): void {
-		this.state = 'CALIBRATING';
-		this.calibrationStartedAtMs = nowMs;
-		this.calibrationSamples = [this.baselineSample(metrics)];
-		this.status = 'Stand tall to calibrate your jump';
-	}
-
-	private recordCalibrationSample(metrics: SquatMetrics): void {
-		// At the configured 30 FPS this stores at most ~20 samples; cap it to
-		// remain bounded even if a bridge delivers frames much faster.
-		if (this.calibrationSamples.length < 48) this.calibrationSamples.push(this.baselineSample(metrics));
-	}
-
-	private completeCalibration(metrics: SquatMetrics): void {
-		if (this.calibrationSamples.length === 0) {
-			this.setGroundBaseline(metrics);
-		} else {
-			this.ground = {
-				leftFootY: median(this.calibrationSamples.map(sample => sample.leftFootY)),
-				rightFootY: median(this.calibrationSamples.map(sample => sample.rightFootY)),
-				pelvisY: median(this.calibrationSamples.map(sample => sample.pelvisY)),
-			};
-		}
-		this.resetCalibration();
-		this.previousJumpSample = null;
-		this.lastJumpSignals = null;
-	}
-
-	private resetCalibration(): void {
-		this.calibrationStartedAtMs = null;
-		this.calibrationSamples = [];
-	}
-
 	private enterBottom(nowMs: number): void {
 		this.state = 'BOTTOM';
 		this.bottomStartedAtMs = nowMs;
@@ -359,10 +313,10 @@ export class SquatDetector {
 		this.clearJumpEvent();
 	}
 
-	private setGroundBaseline(metrics: SquatMetrics): void {
+	private setGroundBaseline(metrics: SquatMetrics, nowMs: number): void {
 		this.ground = this.baselineSample(metrics);
 		this.jumpTopReachedAtMs = null;
-		this.previousJumpSample = null;
+		this.previousJumpSample = { ...this.ground, atMs: nowMs };
 		this.lastJumpSignals = null;
 	}
 
@@ -421,15 +375,28 @@ export class SquatDetector {
 		nowMs: number,
 	): void {
 		if (!signals || !this.ground) return;
+		const leftReliable = signals.leftFootConfidence >= SQUAT_PARAMS.JUMP_FOOT_CONFIDENCE_MIN;
+		const rightReliable = signals.rightFootConfidence >= SQUAT_PARAMS.JUMP_FOOT_CONFIDENCE_MIN;
 		const bothFeetRisen =
+			leftReliable &&
+			rightReliable &&
 			signals.leftFootRiseSW >= SQUAT_PARAMS.JUMP_MIN_FOOT_RISE_SW &&
 			signals.rightFootRiseSW >= SQUAT_PARAMS.JUMP_MIN_FOOT_RISE_SW;
+		// Side-view clips commonly hide the rear foot. In that case, accept the
+		// visible foot only when it rises farther and the pelvis rises with it.
+		const oneVisibleFootRisen =
+			(leftReliable &&
+				!rightReliable &&
+				signals.leftFootRiseSW >= SQUAT_PARAMS.JUMP_MIN_ONE_FOOT_RISE_SW) ||
+			(rightReliable &&
+				!leftReliable &&
+				signals.rightFootRiseSW >= SQUAT_PARAMS.JUMP_MIN_ONE_FOOT_RISE_SW);
 		const movingUp =
 			signals.footRiseSpeedSWs >= SQUAT_PARAMS.JUMP_MIN_RISE_SPEED_SW_S ||
 			signals.pelvisRiseSpeedSWs >= SQUAT_PARAMS.JUMP_MIN_RISE_SPEED_SW_S;
 		const isTakeoffEvidence =
 			kneeAngle >= SQUAT_PARAMS.JUMP_TAKEOFF_KNEE_ANGLE &&
-			bothFeetRisen &&
+			(bothFeetRisen || oneVisibleFootRisen) &&
 			signals.pelvisRiseSW >= SQUAT_PARAMS.JUMP_MIN_PELVIS_RISE_SW &&
 			movingUp;
 
@@ -438,10 +405,7 @@ export class SquatDetector {
 			return;
 		}
 
-		this.maxFootRiseSW = Math.max(
-			this.maxFootRiseSW,
-			(signals.leftFootRiseSW + signals.rightFootRiseSW) / 2,
-		);
+		this.maxFootRiseSW = Math.max(this.maxFootRiseSW, this.effectiveFootRise(signals));
 		if (this.takeoffEvidenceSinceMs === null) this.takeoffEvidenceSinceMs = nowMs;
 		if (nowMs - this.takeoffEvidenceSinceMs >= SQUAT_PARAMS.JUMP_TAKEOFF_CONFIRM_MS) {
 			this.state = 'JUMP_AIR';
@@ -452,9 +416,10 @@ export class SquatDetector {
 
 	private updateLandingEvidence(signals: JumpSignals | null, nowMs: number): void {
 		if (!signals) return;
-		const averageFootRiseSW = (signals.leftFootRiseSW + signals.rightFootRiseSW) / 2;
+		const averageFootRiseSW = this.effectiveFootRise(signals);
 		this.maxFootRiseSW = Math.max(this.maxFootRiseSW, averageFootRiseSW);
 		const descendedFromPeak =
+			this.maxFootRiseSW >= SQUAT_PARAMS.JUMP_MIN_PEAK_FOOT_RISE_SW &&
 			this.maxFootRiseSW - averageFootRiseSW >= SQUAT_PARAMS.JUMP_MIN_DESCENT_FROM_PEAK_SW;
 		const movingDown =
 			signals.footRiseSpeedSWs <= -SQUAT_PARAMS.JUMP_MIN_FALL_SPEED_SW_S ||
@@ -466,6 +431,19 @@ export class SquatDetector {
 			return;
 		}
 		if (this.landingEvidenceSinceMs === null) this.landingEvidenceSinceMs = nowMs;
+	}
+
+	private effectiveFootRise(signals: JumpSignals): number {
+		const reliableRises: number[] = [];
+		if (signals.leftFootConfidence >= SQUAT_PARAMS.JUMP_FOOT_CONFIDENCE_MIN) {
+			reliableRises.push(signals.leftFootRiseSW);
+		}
+		if (signals.rightFootConfidence >= SQUAT_PARAMS.JUMP_FOOT_CONFIDENCE_MIN) {
+			reliableRises.push(signals.rightFootRiseSW);
+		}
+		return reliableRises.length > 0
+			? reliableRises.reduce((total, rise) => total + rise, 0) / reliableRises.length
+			: (signals.leftFootRiseSW + signals.rightFootRiseSW) / 2;
 	}
 
 	private clearJumpEvent(): void {
@@ -540,9 +518,7 @@ export class SquatDetector {
 	private jumpDiagnostics(nowMs: number): JumpDiagnostics {
 		const signals = this.lastJumpSignals;
 		const state: JumpDiagnostics['state'] =
-			this.state === 'CALIBRATING'
-				? 'calibrating'
-				: this.state === 'BOTTOM' || this.state === 'PULSE_UP'
+			this.state === 'BOTTOM' || this.state === 'PULSE_UP'
 					? this.takeoffEvidenceSinceMs === null
 						? 'armed'
 						: 'takeoff'
@@ -571,9 +547,7 @@ export class SquatDetector {
 	private movementStatus(): string {
 		switch (this.state) {
 			case 'INIT':
-				return 'Stand tall to calibrate';
-			case 'CALIBRATING':
-				return 'Stand tall to calibrate your jump';
+				return 'Get your full body in frame';
 			case 'TOP':
 				return this.mode === 'jump' ? 'Lower into a jump squat' : 'Lower into your squat';
 			case 'BOTTOM':
@@ -584,10 +558,4 @@ export class SquatDetector {
 				return 'Jump detected — land softly';
 		}
 	}
-}
-
-function median(values: number[]): number {
-	const sorted = [...values].sort((a, b) => a - b);
-	const middle = Math.floor(sorted.length / 2);
-	return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
 }

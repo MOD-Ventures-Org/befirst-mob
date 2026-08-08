@@ -76,4 +76,23 @@ describe('squat metrics', () => {
 
 		expect(metrics).toMatchObject({ leftFootY: 280, rightFootY: 280 });
 	});
+
+	it('uses the visible leg for a side-view Jump Squat when the rear leg is occluded', () => {
+		const sideViewVisibility = visibility(0.9);
+		sideViewVisibility.rightShoulder = 0.1;
+		sideViewVisibility.rightHip = 0.1;
+		sideViewVisibility.rightKnee = 0.1;
+		sideViewVisibility.rightAnkle = 0.1;
+
+		expect(hasTrackableSquatBody(sideViewVisibility)).toBe(false);
+		expect(hasTrackableSquatBody(sideViewVisibility, true)).toBe(true);
+		expect(
+			measureSquat(skeleton, sideViewVisibility, { skeleton: feet, visibility: footVisibility }, { allowSingleSide: true }),
+		).toMatchObject({
+			kneeAngle: expect.any(Number),
+			shoulderWidth: expect.any(Number),
+			leftFootConfidence: 0.9,
+			rightFootConfidence: 0.1,
+		});
+	});
 });

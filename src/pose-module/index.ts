@@ -1,5 +1,5 @@
 export { usePoseSession } from './hooks/usePoseSession';
-export type { UsePoseSessionConfig } from './hooks/usePoseSession';
+export type { ReplayImageFrame, UsePoseSessionConfig } from './hooks/usePoseSession';
 export { usePyramidSession } from './hooks/usePyramidSession';
 export type { PyramidPhase, PyramidSessionState } from './hooks/usePyramidSession';
 export type {

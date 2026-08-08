@@ -14,9 +14,20 @@ import { PUSHUP_PARAMS } from '../exercises/pushup.config';
 
 // Only the `full` tier ships in the app bundle today; PUSHUP_PARAMS.POSE_MODEL
 // picks the file, so switching tiers also requires bundling the model asset.
-const MODEL_PATH = `pose_landmarker_${PUSHUP_PARAMS.POSE_MODEL}.task`;
+export const POSE_MODEL_FILE = `pose_landmarker_${PUSHUP_PARAMS.POSE_MODEL}.task`;
 
 export const POSE_MODEL_NAME = PUSHUP_PARAMS.POSE_MODEL;
+
+// Keep the developer video-replay path on the exact same model and confidence
+// contract as the live camera. `fpsMode` and output orientation are camera-only
+// concerns and are intentionally added below rather than exported here.
+export const POSE_DETECTION_OPTIONS = {
+  delegate: Delegate.GPU,
+  numPoses: 1,
+  minPoseDetectionConfidence: PUSHUP_PARAMS.DETECT_CONF,
+  minPosePresenceConfidence: PUSHUP_PARAMS.PRESENCE_CONF,
+  minTrackingConfidence: PUSHUP_PARAMS.TRACKING_CONF,
+} as const;
 
 interface CameraServiceCallbacks {
   onResults: (results: PoseDetectionResultBundle, vc: ViewCoordinator) => void;
@@ -48,19 +59,15 @@ export function useCameraService({ onResults, onError, processingFps }: CameraSe
   const solution = usePoseDetection(
     { onResults: stableOnResults, onError: stableOnError },
     RunningMode.LIVE_STREAM,
-    MODEL_PATH,
+    POSE_MODEL_FILE,
     {
       // react-native-mediapipe emits a result only when it finds a pose. An
       // empty camera frame is therefore not evidence of a failed GPU delegate.
       // Falling back after a few no-pose frames previously forced Android into
       // much slower CPU inference before the athlete had entered the frame.
-      delegate: Delegate.GPU,
+      ...POSE_DETECTION_OPTIONS,
       // One person, higher confidence -> reject "other objects as a person" and
       // weak ghost poses that made the skeleton lose focus / drift.
-      numPoses: 1,
-      minPoseDetectionConfidence: PUSHUP_PARAMS.DETECT_CONF,
-      minPosePresenceConfidence: PUSHUP_PARAMS.PRESENCE_CONF,
-      minTrackingConfidence: PUSHUP_PARAMS.TRACKING_CONF,
       fpsMode: processingFps,
       // Lock only the OUTPUT orientation to portrait. The trainer screen is
       // portrait, so this stops the auto orientation from oscillating on a flat

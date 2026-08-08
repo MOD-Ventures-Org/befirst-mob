@@ -27,7 +27,15 @@
           "cameraPermissionText": "Allow $(PRODUCT_NAME) to access your camera for live pose tracking.",
           "enableMicrophonePermission": false
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to select developer test videos for on-device pose replay.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-video"
     ],
     "assetBundlePatterns": [
       "**/*"

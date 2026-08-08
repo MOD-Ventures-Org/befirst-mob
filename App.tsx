@@ -17,6 +17,7 @@ import { DebugPanel } from './src/pose-module/screens/components/DebugPanel';
 import PermissionPlaceholder from './src/pose-module/screens/components/PermissionPlaceholder';
 import PoseCamera from './src/pose-module/screens/components/PoseCamera';
 import SkiaSkeletonOverlay from './src/pose-module/screens/components/SkiaSkeletonOverlay';
+import VideoReplayTracker, { type ReplayExercise } from './src/pose-module/screens/components/VideoReplayTracker';
 
 type Exercise = 'pushup-pyramid' | 'squat' | 'jump-squat' | 'banded-side-step';
 type LowerBodyExercise = Exclude<Exercise, 'pushup-pyramid'>;
@@ -167,9 +168,10 @@ function getPyramidMessage(
 
 interface PyramidTrackerProps {
 	onSelectExercise: (exercise: Exercise) => void;
+	onOpenVideoReplay: () => void;
 }
 
-function PyramidTracker({ onSelectExercise }: PyramidTrackerProps) {
+function PyramidTracker({ onSelectExercise, onOpenVideoReplay }: PyramidTrackerProps) {
 	const insets = useSafeAreaInsets();
 	const {
 		pose,
@@ -191,7 +193,7 @@ function PyramidTracker({ onSelectExercise }: PyramidTrackerProps) {
 	} = usePyramidSession();
 
 	if (!hasPermission) {
-		return <PermissionPlaceholder onRequestPermission={requestPermission} />;
+		return <PermissionPlaceholder onOpenVideoReplay={onOpenVideoReplay} onRequestPermission={requestPermission} />;
 	}
 
 	const isReady = phase === 'READY';
@@ -222,6 +224,11 @@ function PyramidTracker({ onSelectExercise }: PyramidTrackerProps) {
 								<PyramidLevelCard key={option} level={option} onPress={() => startSession(option)} />
 							))}
 						</View>
+						{__DEV__ ? (
+							<Pressable accessibilityLabel="Replay a test video" onPress={onOpenVideoReplay} style={styles.videoReplayButton}>
+								<Text style={styles.videoReplayButtonText}>Test a recorded video</Text>
+							</Pressable>
+						) : null}
 					</View>
 				) : isTerminal ? (
 					<View pointerEvents="auto" style={styles.terminalCard}>
@@ -272,9 +279,10 @@ function PyramidTracker({ onSelectExercise }: PyramidTrackerProps) {
 interface WorkoutTrackerProps {
 	exercise: LowerBodyExercise;
 	onSelectExercise: (exercise: Exercise) => void;
+	onOpenVideoReplay: () => void;
 }
 
-function WorkoutTracker({ exercise, onSelectExercise }: WorkoutTrackerProps) {
+function WorkoutTracker({ exercise, onSelectExercise, onOpenVideoReplay }: WorkoutTrackerProps) {
 	const insets = useSafeAreaInsets();
 	const {
 		pose,
@@ -323,7 +331,7 @@ function WorkoutTracker({ exercise, onSelectExercise }: WorkoutTrackerProps) {
 	const exerciseLabel = isSquat ? 'Squats' : isJumpSquat ? 'Jump Squats' : 'Banded Side Steps';
 
 	if (!hasPermission) {
-		return <PermissionPlaceholder onRequestPermission={requestPermission} />;
+		return <PermissionPlaceholder onOpenVideoReplay={onOpenVideoReplay} onRequestPermission={requestPermission} />;
 	}
 
 	return (
@@ -383,9 +391,14 @@ function WorkoutTracker({ exercise, onSelectExercise }: WorkoutTrackerProps) {
 					{initError ? <Text style={styles.error}>{initError}</Text> : null}
 				</View>
 				<View style={styles.controls}>
-					<Pressable style={[styles.button, isRunning && styles.stopButton]} onPress={isRunning ? stop : start}>
+					<Pressable style={[styles.button, isRunning && styles.stopButton]} onPress={() => (isRunning ? stop() : start())}>
 						<Text style={styles.buttonText}>{isRunning ? 'Stop' : 'Start'}</Text>
 					</Pressable>
+					{__DEV__ && !isRunning ? (
+						<Pressable accessibilityLabel="Replay a test video" onPress={onOpenVideoReplay} style={styles.videoReplayButton}>
+							<Text style={styles.videoReplayButtonText}>Test video</Text>
+						</Pressable>
+					) : null}
 				</View>
 			</View>
 		</View>
@@ -394,12 +407,17 @@ function WorkoutTracker({ exercise, onSelectExercise }: WorkoutTrackerProps) {
 
 function AppContent() {
 	const [exercise, setExercise] = useState<Exercise>('pushup-pyramid');
+	const [replayOpen, setReplayOpen] = useState(false);
 
-	if (exercise === 'pushup-pyramid') {
-		return <PyramidTracker key={exercise} onSelectExercise={setExercise} />;
+	if (replayOpen) {
+		return <VideoReplayTracker initialExercise={exercise as ReplayExercise} onClose={() => setReplayOpen(false)} />;
 	}
 
-	return <WorkoutTracker key={exercise} exercise={exercise} onSelectExercise={setExercise} />;
+	if (exercise === 'pushup-pyramid') {
+		return <PyramidTracker key={exercise} onOpenVideoReplay={() => setReplayOpen(true)} onSelectExercise={setExercise} />;
+	}
+
+	return <WorkoutTracker key={exercise} exercise={exercise} onOpenVideoReplay={() => setReplayOpen(true)} onSelectExercise={setExercise} />;
 }
 
 export default function App() {
@@ -802,6 +820,8 @@ const styles = StyleSheet.create({
 		position: 'absolute',
 		right: 20,
 		bottom: 36,
+		alignItems: 'flex-end',
+		gap: 8,
 	},
 	button: {
 		minWidth: 116,
@@ -819,6 +839,21 @@ const styles = StyleSheet.create({
 	buttonText: {
 		color: 'white',
 		fontSize: 17,
+		fontWeight: '800',
+	},
+	videoReplayButton: {
+		alignSelf: 'center',
+		marginTop: 14,
+		paddingHorizontal: 14,
+		paddingVertical: 9,
+		borderRadius: 10,
+		backgroundColor: 'rgba(255, 255, 255, 0.10)',
+		borderWidth: 1,
+		borderColor: 'rgba(255, 255, 255, 0.2)',
+	},
+	videoReplayButtonText: {
+		color: '#fff',
+		fontSize: 12,
 		fontWeight: '800',
 	},
 });

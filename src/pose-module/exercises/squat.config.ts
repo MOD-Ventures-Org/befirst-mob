@@ -20,31 +20,40 @@ export const SQUAT_PARAMS = {
 	PULSE_UP_MAX_KNEE_ANGLE: 148,
 	// Jump Squats are evaluated in milliseconds, not frame counts: processed
 	// camera FPS varies considerably across phones and can dip during take-off.
-	JUMP_CALIBRATION_MS: 600,
-	JUMP_TAKEOFF_CONFIRM_MS: 80,
+	// A replay may begin while the athlete is already moving, so jump detection
+	// must not depend on a long standing-only calibration window. A short
+	// timestamp confirmation still rejects one-frame landmark spikes.
+	JUMP_TAKEOFF_CONFIRM_MS: 50,
 	// After the knees first reach the phone-facing "top" estimate, retain the
 	// squat baseline briefly. A real jump's highest foot displacement often
 	// lands 1–2 processed frames after knee extension.
-	JUMP_TAKEOFF_WINDOW_MS: 240,
-	JUMP_LANDING_CONFIRM_MS: 80,
-	JUMP_TRACKING_GAP_MS: 250,
+	JUMP_TAKEOFF_WINDOW_MS: 300,
+	// Once a real takeoff has been sustained, the first clear descent verifies
+	// the airborne arc. Waiting for an additional landing frame loses short
+	// jumps when feet are occluded at ground contact.
+	JUMP_LANDING_CONFIRM_MS: 0,
+	JUMP_TRACKING_GAP_MS: 300,
 	// Rising out of a squat can move the estimated feet by a few pixels. Do
 	// not arm takeoff until the knees are nearly straight and the foot/hip rise
 	// is large enough to be a real leave-the-floor movement.
 	// A front camera routinely estimates a fully extended knee near the shared
 	// top threshold rather than anatomical 180°. Foot/hip lift and velocity are
 	// still required, so this does not turn an ordinary squat into a jump.
-	JUMP_TAKEOFF_KNEE_ANGLE: 150,
-	JUMP_MIN_FOOT_RISE_SW: 0.18,
-	JUMP_MIN_PELVIS_RISE_SW: 0.1,
-	JUMP_MIN_RISE_SPEED_SW_S: 0.35,
+	JUMP_TAKEOFF_KNEE_ANGLE: 140,
+	JUMP_FOOT_CONFIDENCE_MIN: 0.35,
+	JUMP_MIN_FOOT_RISE_SW: 0.06,
+	JUMP_MIN_ONE_FOOT_RISE_SW: 0.11,
+	JUMP_MIN_PEAK_FOOT_RISE_SW: 0.09,
+	JUMP_MIN_PELVIS_RISE_SW: 0.06,
+	JUMP_MIN_RISE_SPEED_SW_S: 0.2,
 	// A real jump has an airborne arc: after takeoff, the feet/hips must begin
 	// descending from their peak. This is intentionally not a strict "feet back
 	// on ground" check, which is often lost by a phone camera at landing.
-	JUMP_MIN_DESCENT_FROM_PEAK_SW: 0.05,
-	JUMP_MIN_FALL_SPEED_SW_S: 0.12,
+	JUMP_MIN_DESCENT_FROM_PEAK_SW: 0.035,
+	JUMP_MIN_FALL_SPEED_SW_S: 0.08,
 	JUMP_MAX_AIR_MS: 1_800,
 	MAX_TORSO_LEAN_DEG: 45,
+	JUMP_MAX_TORSO_LEAN_DEG: 70,
 	MIN_REP_MS: 350,
 	MIN_BOTTOM_TO_PULSE_MS: 120,
 	HOLD_MIN_MS: 750,

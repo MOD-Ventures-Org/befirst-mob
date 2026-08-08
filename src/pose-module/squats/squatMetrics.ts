@@ -1,4 +1,4 @@
-import { angleAt, conf, midpoint, shoulderWidth } from '../geometry';
+import { angleAt, conf, dist, midpoint, shoulderWidth } from '../geometry';
 import { SQUAT_PARAMS } from '../exercises/squat.config';
 import type { FootLandmarks, FootVisibility, JointVisibility, Skeleton } from '../types';
 
@@ -33,8 +33,23 @@ const REQUIRED_JOINTS: (keyof Skeleton)[] = [
 	'rightAnkle',
 ];
 
-export function hasTrackableSquatBody(visibility: JointVisibility): boolean {
-	return REQUIRED_JOINTS.every(joint => conf(visibility, joint) >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN);
+export function hasTrackableSquatBody(visibility: JointVisibility, allowSingleSide = false): boolean {
+	if (!allowSingleSide) {
+		return REQUIRED_JOINTS.every(joint => conf(visibility, joint) >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN);
+	}
+
+	const sideIsTrackable = (side: 'left' | 'right') =>
+		conf(visibility, `${side}Shoulder`) >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN &&
+		conf(visibility, `${side}Hip`) >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN &&
+		conf(visibility, `${side}Knee`) >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN &&
+		conf(visibility, `${side}Ankle`) >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN;
+	return sideIsTrackable('left') || sideIsTrackable('right');
+}
+
+export interface SquatMeasurementOptions {
+	// Side-view exercise videos often occlude the rear leg. Jump Squats can use
+	// the visible leg plus pelvis motion; side steps still require both legs.
+	allowSingleSide?: boolean;
 }
 
 function lowestVisibleFootPoint(
@@ -71,24 +86,62 @@ export function measureSquat(
 	skeleton: Skeleton,
 	visibility: JointVisibility,
 	feet?: { skeleton: FootLandmarks; visibility: FootVisibility },
+	options: SquatMeasurementOptions = {},
 ): SquatMetrics | null {
-	if (!hasTrackableSquatBody(visibility)) return null;
+	const allowSingleSide = options.allowSingleSide ?? false;
+	if (!hasTrackableSquatBody(visibility, allowSingleSide)) return null;
 
-	const width = shoulderWidth(skeleton);
+	const jointCenter = (left: keyof Skeleton, right: keyof Skeleton) => {
+		const leftVisible = conf(visibility, left) >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN;
+		const rightVisible = conf(visibility, right) >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN;
+		if (leftVisible && rightVisible) return midpoint(skeleton[left], skeleton[right]);
+		if (leftVisible) return skeleton[left];
+		if (rightVisible) return skeleton[right];
+		return midpoint(skeleton[left], skeleton[right]);
+	};
+	const sideKneeAngle = (side: 'left' | 'right'): number | null => {
+		if (
+			allowSingleSide &&
+			(conf(visibility, `${side}Hip`) < SQUAT_PARAMS.JOINT_CONFIDENCE_MIN ||
+				conf(visibility, `${side}Knee`) < SQUAT_PARAMS.JOINT_CONFIDENCE_MIN ||
+				conf(visibility, `${side}Ankle`) < SQUAT_PARAMS.JOINT_CONFIDENCE_MIN)
+		) {
+			return null;
+		}
+		return angleAt(skeleton[`${side}Knee`], skeleton[`${side}Hip`], skeleton[`${side}Ankle`]);
+	};
+	const kneeAngles = [sideKneeAngle('left'), sideKneeAngle('right')].filter(
+		(angle): angle is number => angle !== null,
+	);
+	if (kneeAngles.length === 0) return null;
+
+	const shoulderMid = jointCenter('leftShoulder', 'rightShoulder');
+	const hipMid = jointCenter('leftHip', 'rightHip');
+	const bothShouldersVisible =
+		conf(visibility, 'leftShoulder') >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN &&
+		conf(visibility, 'rightShoulder') >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN;
+	const bothHipsVisible =
+		conf(visibility, 'leftHip') >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN &&
+		conf(visibility, 'rightHip') >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN;
+	const frontWidth = !allowSingleSide || bothShouldersVisible ? shoulderWidth(skeleton) : 0;
+	const torsoScale = dist(shoulderMid, hipMid) * 0.45;
+	const hipWidth = bothHipsVisible ? dist(skeleton.leftHip, skeleton.rightHip) * 1.15 : 0;
+	// Shoulder span collapses in a side view. A torso-derived floor keeps jump
+	// normalization stable without changing ordinary front-view scale.
+	const width = allowSingleSide ? Math.max(frontWidth, hipWidth, torsoScale) : frontWidth;
 	if (width <= 0) return null;
-
-	const leftKnee = angleAt(skeleton.leftKnee, skeleton.leftHip, skeleton.leftAnkle);
-	const rightKnee = angleAt(skeleton.rightKnee, skeleton.rightHip, skeleton.rightAnkle);
-	if (leftKnee === null || rightKnee === null) return null;
-
-	const shoulderMid = midpoint(skeleton.leftShoulder, skeleton.rightShoulder);
-	const hipMid = midpoint(skeleton.leftHip, skeleton.rightHip);
 	const leftFoot = lowestVisibleFootPoint(skeleton, visibility, feet?.skeleton, feet?.visibility, 'left');
 	const rightFoot = lowestVisibleFootPoint(skeleton, visibility, feet?.skeleton, feet?.visibility, 'right');
+	const legConfidence = (side: 'left' | 'right') =>
+		Math.min(
+			conf(visibility, `${side}Hip`),
+			conf(visibility, `${side}Knee`),
+			conf(visibility, `${side}Ankle`),
+		);
 	const torsoLean = Math.abs((Math.atan2(shoulderMid.x - hipMid.x, hipMid.y - shoulderMid.y) * 180) / Math.PI);
 
 	return {
-		kneeAngle: (leftKnee + rightKnee) / 2,
+		kneeAngle: kneeAngles.reduce((total, angle) => total + angle, 0) / kneeAngles.length,
 		stanceWidth: Math.abs(skeleton.leftAnkle.x - skeleton.rightAnkle.x) / width,
 		pelvisY: hipMid.y,
 		ankleY: (skeleton.leftAnkle.y + skeleton.rightAnkle.y) / 2,
@@ -100,7 +153,7 @@ export function measureSquat(
 		torsoLean,
 		leftFootY: leftFoot.y,
 		rightFootY: rightFoot.y,
-		leftFootConfidence: leftFoot.confidence,
-		rightFootConfidence: rightFoot.confidence,
+		leftFootConfidence: Math.min(leftFoot.confidence, legConfidence('left')),
+		rightFootConfidence: Math.min(rightFoot.confidence, legConfidence('right')),
 	};
 }

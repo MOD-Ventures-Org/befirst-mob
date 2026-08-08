@@ -6,6 +6,8 @@ function frame(
 	pelvisY = 400,
 	leftFootY = 500,
 	rightFootY = leftFootY,
+	leftFootConfidence = 1,
+	rightFootConfidence = 1,
 ): SquatMetrics {
 	return {
 		kneeAngle,
@@ -20,6 +22,8 @@ function frame(
 		torsoLean: 8,
 		leftFootY,
 		rightFootY,
+		leftFootConfidence,
+		rightFootConfidence,
 	};
 }
 
@@ -82,18 +86,18 @@ describe('SquatDetector', () => {
 		expect(partialRise.jumpDiagnostics?.state).not.toBe('airborne');
 	});
 
-	it('credits a clear Jump Squat after calibrated takeoff and landing windows', () => {
+	it('credits a clear Jump Squat on the first verified downward arc', () => {
 		const detector = new SquatDetector('jump');
 		calibrateJumpDetector(detector);
 		detector.update(frame(128, 420, 520), 800);
 		detector.update(frame(128, 380, 510), 900);
 		detector.update(frame(152, 260, 480), 1_000); // takeoff starts at phone-facing top angle
 		const airborne = detector.update(frame(152, 230, 470), 1_100); // 100 ms airborne confirmation
-		detector.update(frame(152, 280, 490), 1_200); // descending arc starts
-		const landing = detector.update(frame(152, 330, 500), 1_300); // 100 ms descent confirmation
+		const descent = detector.update(frame(152, 280, 490), 1_200); // descending arc verifies the jump
+		const landing = detector.update(frame(152, 330, 500), 1_300);
 
 		expect(airborne.rep).toBeUndefined();
-		expect(landing.rep).toEqual({ variant: 'jump', totalReps: 1 });
+		expect(descent.rep).toEqual({ variant: 'jump', totalReps: 1 });
 		expect(landing.repCounts.jump).toBe(1);
 	});
 
@@ -104,12 +108,13 @@ describe('SquatDetector', () => {
 		const firstTopFrame = detector.update(frame(152, 310, 495), 1_000); // not lifted enough yet
 		detector.update(frame(152, 250, 480), 1_120); // peak lift arrives after knee extension
 		const airborne = detector.update(frame(152, 230, 470), 1_220);
-		detector.update(frame(152, 280, 490), 1_320);
+		const descent = detector.update(frame(152, 280, 490), 1_320);
 		const landing = detector.update(frame(152, 330, 500), 1_420);
 
 		expect(firstTopFrame.jumpDiagnostics?.state).toBe('armed');
 		expect(airborne.jumpDiagnostics?.state).toBe('airborne');
-		expect(landing.rep).toEqual({ variant: 'jump', totalReps: 1 });
+		expect(descent.rep).toEqual({ variant: 'jump', totalReps: 1 });
+		expect(landing.repCounts.jump).toBe(1);
 	});
 
 	it('uses timestamps, not frame counts, when inference is slow or frames are dropped', () => {
@@ -118,11 +123,12 @@ describe('SquatDetector', () => {
 		detector.update(frame(128, 420, 520), 800);
 		detector.update(frame(166, 260, 480), 1_000); // takeoff begins
 		const airborne = detector.update(frame(166, 220, 470), 1_200); // 200 ms later: airborne
-		detector.update(frame(166, 280, 490), 1_400); // descent begins
+		const descent = detector.update(frame(166, 280, 490), 1_400); // descent begins
 		const landing = detector.update(frame(152, 330, 500), 1_600); // 200 ms later: confirmed
 
 		expect(airborne.rep).toBeUndefined();
-		expect(landing.rep).toEqual({ variant: 'jump', totalReps: 1 });
+		expect(descent.rep).toEqual({ variant: 'jump', totalReps: 1 });
+		expect(landing.repCounts.jump).toBe(1);
 	});
 
 	it('holds an airborne event through a short landmark dropout', () => {
@@ -132,11 +138,12 @@ describe('SquatDetector', () => {
 		detector.update(frame(166, 260, 480), 1_000);
 		const airborne = detector.update(frame(166, 230, 470), 1_100); // airborne
 		detector.gap(1_280); // 180 ms: inside the 250 ms jump tracking allowance
-		detector.update(frame(166, 280, 490), 1_300);
+		const descent = detector.update(frame(166, 280, 490), 1_300);
 		const landing = detector.update(frame(152, 330, 500), 1_400);
 
 		expect(airborne.rep).toBeUndefined();
-		expect(landing.rep).toEqual({ variant: 'jump', totalReps: 1 });
+		expect(descent.rep).toEqual({ variant: 'jump', totalReps: 1 });
+		expect(landing.repCounts.jump).toBe(1);
 	});
 
 	it('does not count an unverified jump when landing landmarks stay lost', () => {
@@ -145,7 +152,7 @@ describe('SquatDetector', () => {
 		detector.update(frame(128, 420, 520), 800);
 		detector.update(frame(166, 260, 480), 1_000);
 		detector.update(frame(166, 230, 470), 1_100);
-		const update = detector.gap(1_400);
+		const update = detector.gap(1_401);
 
 		expect(update.repCounts.jump).toBe(0);
 		expect(update.status).toContain('Feet lost during jump');
@@ -164,6 +171,61 @@ describe('SquatDetector', () => {
 		expect(settledAtTop.rep).toBeUndefined();
 		expect(timeout.repCounts.jump).toBe(0);
 		expect(timeout.jumpDiagnostics?.state).toBe('ready');
+	});
+
+	it('counts the first jump when a replay starts at squat bottom', () => {
+		const detector = new SquatDetector('jump');
+		const bottom = detector.update(frame(125, 420, 520), 0);
+		detector.update(frame(152, 330, 505), 200);
+		const airborne = detector.update(frame(158, 280, 500), 280);
+		const descent = detector.update(frame(158, 340, 515), 450);
+
+		expect(bottom.jumpDiagnostics?.state).toBe('armed');
+		expect(airborne.jumpDiagnostics?.state).toBe('airborne');
+		expect(descent.rep).toEqual({ variant: 'jump', totalReps: 1 });
+	});
+
+	it('counts a modest but real jump instead of requiring a very high leap', () => {
+		const detector = new SquatDetector('jump');
+		detector.update(frame(170, 300, 500), 0);
+		detector.update(frame(125, 420, 520), 300);
+		detector.update(frame(152, 290, 490), 500);
+		detector.update(frame(158, 275, 487), 570);
+		const descent = detector.update(frame(158, 325, 498), 700);
+
+		expect(descent.rep).toEqual({ variant: 'jump', totalReps: 1 });
+	});
+
+	it('counts a side-view jump when the rear foot is occluded', () => {
+		const detector = new SquatDetector('jump');
+		detector.update(frame(170, 300, 500, 500, 0.95, 0.12), 0);
+		detector.update(frame(125, 420, 520, 520, 0.95, 0.12), 300);
+		detector.update(frame(152, 285, 484, 515, 0.95, 0.12), 500);
+		detector.update(frame(158, 265, 480, 518, 0.95, 0.12), 570);
+		const descent = detector.update(frame(158, 330, 495, 520, 0.95, 0.12), 720);
+
+		expect(descent.rep).toEqual({ variant: 'jump', totalReps: 1 });
+	});
+
+	it('keeps an athletic forward torso lean armed in Jump Squat mode', () => {
+		const detector = new SquatDetector('jump');
+		detector.update({ ...frame(170, 300, 500), torsoLean: 55 }, 0);
+		const bottom = detector.update({ ...frame(125, 420, 520), torsoLean: 60 }, 300);
+
+		expect(bottom.jumpDiagnostics?.state).toBe('armed');
+		expect(bottom.status).toBe('Drive up and leave the floor');
+	});
+
+	it('does not count a normal squat with small two-foot landmark drift', () => {
+		const detector = new SquatDetector('jump');
+		detector.update(frame(170, 300, 500), 0);
+		detector.update(frame(125, 420, 520), 300);
+		detector.update(frame(152, 320, 494), 500);
+		detector.update(frame(170, 300, 493), 570);
+		const settled = detector.update(frame(170, 300, 500), 720);
+
+		expect(settled.repCounts.jump).toBe(0);
+		expect(settled.rep).toBeUndefined();
 	});
 
 	it('keeps a regular squat state through a brief landmark dropout', () => {

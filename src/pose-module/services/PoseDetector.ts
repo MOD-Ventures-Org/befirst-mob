@@ -44,6 +44,29 @@ export const FOOT_JOINT_LANDMARK_INDEX: Record<FootLandmarkName, number> = {
 };
 
 /**
+ * Coordinates MediaPipe IMAGE-mode landmarks over a replayed video. It uses
+ * the same `contain` geometry as the developer replay player, including the
+ * letterbox area, so the skeleton stays aligned without needing a camera view.
+ */
+export function createReplayViewCoordinator(displayWidth: number, displayHeight: number): ViewCoordinator {
+	return {
+		getFrameDims: results => ({
+			width: Math.max(1, results.inputImageWidth),
+			height: Math.max(1, results.inputImageHeight),
+		}),
+		convertPoint: (frame, point) => {
+			const scale = Math.min(displayWidth / frame.width, displayHeight / frame.height);
+			const renderedWidth = frame.width * scale;
+			const renderedHeight = frame.height * scale;
+			return {
+				x: (displayWidth - renderedWidth) / 2 + point.x * frame.width * scale,
+				y: (displayHeight - renderedHeight) / 2 + point.y * frame.height * scale,
+			};
+		},
+	};
+}
+
+/**
  * Map MediaPipe landmarks to on-screen pixels.
  *
  * The library's `ViewCoordinator.convertPoint` is the source of truth for the

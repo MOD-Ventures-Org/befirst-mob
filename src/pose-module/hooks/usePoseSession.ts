@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 
-import type { DetectionError, PoseDetectionResultBundle, ViewCoordinator } from 'react-native-mediapipe';
+import { PoseDetectionOnImage, type DetectionError, type PoseDetectionResultBundle, type ViewCoordinator } from 'react-native-mediapipe';
 import { type SharedValue, useSharedValue } from 'react-native-reanimated';
 
 import { getExerciseConfig } from '../exercises';
@@ -19,9 +19,9 @@ import { PoseStabilizer } from '../poseStabilizer';
 import { isUprightExtended } from '../posture';
 import { RepDetector } from '../repDetector';
 import { computeAngles } from '../services/AngleCalculator';
-import { POSE_MODEL_NAME, useCameraService } from '../services/CameraService';
+import { POSE_DETECTION_OPTIONS, POSE_MODEL_FILE, POSE_MODEL_NAME, useCameraService } from '../services/CameraService';
 import { FormChecker } from '../services/FormChecker';
-import { toSkeleton } from '../services/PoseDetector';
+import { createReplayViewCoordinator, toSkeleton } from '../services/PoseDetector';
 import { VelocityTracker } from '../services/VelocityTracker';
 import { buildRenderPose } from '../skeleton';
 import {
@@ -81,6 +81,15 @@ export interface UsePoseSessionConfig {
 	// detector's own count can reset when the body leaves plank between sets, so
 	// callers must treat each call as a single +1 rep rather than an absolute.
 	onRep?: () => void;
+}
+
+export interface ReplayImageFrame {
+	imagePath: string;
+	// Original video timestamp. Counters use this—not decoder speed—so a slow
+	// device replay has the same time-based movement decisions as the clip.
+	timestampMs: number;
+	displayWidth: number;
+	displayHeight: number;
 }
 
 function buildPoseSession(exercise: string, startedAt: number, reps: RepResult[]): PoseSession {
@@ -269,6 +278,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 			activeHold: update.activeHold,
 			holds: update.holds,
 			status: update.status,
+			...(update.jumpDiagnostics ? { jumpDiagnostics: update.jumpDiagnostics } : {}),
 		});
 	}, []);
 
@@ -290,13 +300,13 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 		});
 	}, []);
 
-	const stop = useCallback(() => {
+	const stop = useCallback((finishedAtMs = Date.now()) => {
 		if (!isRunningRef.current) return;
 		if (isSquatExercise) {
-			const now = Date.now();
+			const now = finishedAtMs;
 			publishSquatTracking(squatDetector.current.finish(now), now);
 		} else if (isBandedSideStep) {
-			const now = Date.now();
+			const now = finishedAtMs;
 			publishSideStepTracking(sideStepDetector.current.finish(now), now);
 		}
 		isRunningRef.current = false;
@@ -344,7 +354,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 	}, [commitTrackingDetail, resetDepthState]);
 
 	const onResults = useCallback(
-		(results: PoseDetectionResultBundle, vc: ViewCoordinator) => {
+		(results: PoseDetectionResultBundle, vc: ViewCoordinator, timestampMs?: number) => {
 			const fps = measure();
 			addPerfSample(inferenceSamples.current, results.inferenceTime);
 			processedFrames.current += 1;
@@ -366,7 +376,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 			}
 
 			const frame = toSkeleton(results, vc);
-			const now = Date.now();
+			const now = timestampMs ?? Date.now();
 
 			// Primary-subject lock: a confident detection that teleports or
 			// rescales versus the locked subject is a background shape — treat the
@@ -437,6 +447,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 						frame.skeleton,
 						frame.visibility,
 						frame.feet ? { skeleton: frame.feet.skeleton, visibility: frame.feet.visibility } : undefined,
+						{ allowSingleSide: isJumpSquat },
 					)
 				: null;
 			if (squatMetrics) lastLowerBodyTrackedMs.current = now;
@@ -742,6 +753,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 				commitCoach,
 				isBandedSideStep,
 				isLowerBodyExercise,
+				isJumpSquat,
 				isSquatExercise,
 				pose,
 				publishSideStepTracking,
@@ -749,7 +761,37 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 				commitTrackingDetail,
 				stop,
 				resetDepthState,
-			],
+		],
+	);
+
+	// IMAGE mode is deliberately serialised by the caller. It lets the replay
+	// screen decode one video frame at a time while reusing the complete live
+	// landmark → smoothing → exercise-counter pipeline above.
+	const processReplayImage = useCallback(
+		async ({ imagePath, timestampMs, displayWidth, displayHeight }: ReplayImageFrame): Promise<void> => {
+			const coordinator = createReplayViewCoordinator(displayWidth, displayHeight);
+			try {
+				const results = await PoseDetectionOnImage(imagePath, POSE_MODEL_FILE, POSE_DETECTION_OPTIONS);
+				onResults(results, coordinator, timestampMs);
+			} catch (error) {
+				// The Android IMAGE bridge rejects an otherwise valid frame when no
+				// pose is present, unlike the live-stream bridge which reports a
+				// normal gap. Preserve the live behavior so one blurred/occluded
+				// frame cannot abort a whole replay.
+				if (!isNoPoseImageError(error)) throw error;
+				onResults(
+					{
+						results: [],
+						inferenceTime: 0,
+						inputImageWidth: displayWidth,
+						inputImageHeight: displayHeight,
+					} as PoseDetectionResultBundle,
+					coordinator,
+					timestampMs,
+				);
+			}
+		},
+		[onResults],
 	);
 
 	const handleDetectionError = useCallback((error: DetectionError) => {
@@ -788,7 +830,13 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 		requestPermission,
 		start,
 		stop,
+		processReplayImage,
 	};
+}
+
+function isNoPoseImageError(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return /pose landmarker failed to detect|no pose detected/i.test(message);
 }
 
 export type { SharedValue };
