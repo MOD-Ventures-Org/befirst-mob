@@ -22,6 +22,10 @@ import VideoReplayTracker, { type ReplayExercise } from './src/pose-module/scree
 type Exercise = 'pushup-pyramid' | 'squat' | 'jump-squat' | 'banded-side-step';
 type LowerBodyExercise = Exclude<Exercise, 'pushup-pyramid'>;
 
+// Keep the jump-squat implementation available while it is being tuned. Set
+// this to true to restore the exercise in the UI.
+const SHOW_JUMP_SQUATS = false;
+
 const coachCopy: Record<string, string> = {
 	TOO_CLOSE: 'Move back',
 	NO_BODY: 'Step into frame',
@@ -62,7 +66,7 @@ function ExerciseTabs({ exercise, locked = false, onSelectExercise }: ExerciseTa
 	const tabs: Array<{ id: Exercise; label: string }> = [
 		{ id: 'pushup-pyramid', label: 'Pyramid' },
 		{ id: 'squat', label: 'Squats' },
-		{ id: 'jump-squat', label: 'Jump Squats' },
+		...(SHOW_JUMP_SQUATS ? [{ id: 'jump-squat' as const, label: 'Jump Squats' }] : []),
 		{ id: 'banded-side-step', label: 'Side Steps' },
 	];
 

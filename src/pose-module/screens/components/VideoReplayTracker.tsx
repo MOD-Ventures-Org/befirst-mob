@@ -11,6 +11,10 @@ import SkiaSkeletonOverlay from './SkiaSkeletonOverlay';
 
 export type ReplayExercise = 'pushup-pyramid' | 'squat' | 'jump-squat' | 'banded-side-step';
 
+// Keep this in sync with App.tsx. Set to true when Jump Squats are ready to
+// be exposed again.
+const SHOW_JUMP_SQUATS = false;
+
 // Twenty analysed frames per second preserves the short airborne arc of quick
 // professional jumps while remaining practical for an offline developer run.
 const REPLAY_SAMPLE_INTERVAL_MS = 50;
@@ -19,7 +23,7 @@ const MAX_REPLAY_DURATION_MS = 60_000;
 const EXERCISES: Array<{ id: ReplayExercise; label: string }> = [
 	{ id: 'pushup-pyramid', label: 'Push-ups' },
 	{ id: 'squat', label: 'Squats' },
-	{ id: 'jump-squat', label: 'Jump Squats' },
+	...(SHOW_JUMP_SQUATS ? [{ id: 'jump-squat' as const, label: 'Jump Squats' }] : []),
 	{ id: 'banded-side-step', label: 'Side Steps' },
 ];
 
