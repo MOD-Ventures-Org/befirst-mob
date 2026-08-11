@@ -24,7 +24,7 @@ type LowerBodyExercise = Exclude<Exercise, 'pushup-pyramid'>;
 
 // Keep the jump-squat implementation available while it is being tuned. Set
 // this to true to restore the exercise in the UI.
-const SHOW_JUMP_SQUATS = false;
+const SHOW_JUMP_SQUATS = true;
 
 const coachCopy: Record<string, string> = {
 	TOO_CLOSE: 'Move back',

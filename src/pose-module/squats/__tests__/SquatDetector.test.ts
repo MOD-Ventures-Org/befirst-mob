@@ -196,6 +196,40 @@ describe('SquatDetector', () => {
 		expect(descent.rep).toEqual({ variant: 'jump', totalReps: 1 });
 	});
 
+	it('counts a low jump after a shallow loading squat', () => {
+		const detector = new SquatDetector('jump');
+		detector.update(frame(170, 300, 500), 0);
+		detector.update(frame(142, 390, 505), 300); // natural loading dip, not a deep squat
+		detector.update(frame(150, 292, 495), 500); // five percent of shoulder width off the ground
+		const airborne = detector.update(frame(155, 288, 494), 560);
+		const descent = detector.update(frame(150, 305, 498), 650);
+
+		expect(airborne.jumpDiagnostics?.state).toBe('airborne');
+		expect(descent.rep).toEqual({ variant: 'jump', totalReps: 1 });
+	});
+
+	it('counts consecutive low jump squats without a standing pause', () => {
+		const detector = new SquatDetector('jump');
+		detector.update(frame(170, 300, 500), 0);
+
+		// First repetition.
+		detector.update(frame(142, 390, 505), 300);
+		detector.update(frame(150, 292, 495), 500);
+		detector.update(frame(155, 288, 494), 560);
+		const firstDescent = detector.update(frame(150, 305, 498), 650);
+
+		// Land directly into the next loading dip and jump again. There is no
+		// standing/settled frame between repetitions.
+		detector.update(frame(142, 390, 505), 700);
+		detector.update(frame(150, 292, 495), 820);
+		detector.update(frame(155, 288, 494), 880);
+		const secondDescent = detector.update(frame(150, 305, 498), 970);
+
+		expect(firstDescent.rep).toEqual({ variant: 'jump', totalReps: 1 });
+		expect(secondDescent.rep).toEqual({ variant: 'jump', totalReps: 2 });
+		expect(secondDescent.repCounts.jump).toBe(2);
+	});
+
 	it('counts a side-view jump when the rear foot is occluded', () => {
 		const detector = new SquatDetector('jump');
 		detector.update(frame(170, 300, 500, 500, 0.95, 0.12), 0);

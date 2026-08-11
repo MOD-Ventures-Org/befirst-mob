@@ -10,6 +10,10 @@ export const SQUAT_PARAMS = {
 	// Phone-facing landmarks flatten knee angles compared with a side view. The
 	// original deep-only thresholds left ordinary, controlled squats uncounted.
 	TOP_KNEE_ANGLE: 150,
+	// Jump Squats only need a clear loading dip before takeoff. Reusing the
+	// regular-squat depth made athletes descend much farther than a natural,
+	// continuous jump-squat rhythm requires.
+	JUMP_BOTTOM_KNEE_ANGLE: 145,
 	// A clearly extended knee lets regular Squats finish even if one ankle
 	// briefly jitters upward. Near the regular top threshold we give the jump
 	// detector its two-frame confirmation window first.
@@ -41,20 +45,23 @@ export const SQUAT_PARAMS = {
 	// still required, so this does not turn an ordinary squat into a jump.
 	JUMP_TAKEOFF_KNEE_ANGLE: 140,
 	JUMP_FOOT_CONFIDENCE_MIN: 0.35,
-	JUMP_MIN_FOOT_RISE_SW: 0.06,
-	JUMP_MIN_ONE_FOOT_RISE_SW: 0.11,
-	JUMP_MIN_PEAK_FOOT_RISE_SW: 0.09,
-	JUMP_MIN_PELVIS_RISE_SW: 0.06,
-	JUMP_MIN_RISE_SPEED_SW_S: 0.2,
+	JUMP_MIN_FOOT_RISE_SW: 0.04,
+	JUMP_MIN_ONE_FOOT_RISE_SW: 0.08,
+	JUMP_MIN_PEAK_FOOT_RISE_SW: 0.055,
+	JUMP_MIN_PELVIS_RISE_SW: 0.04,
+	JUMP_MIN_RISE_SPEED_SW_S: 0.15,
 	// A real jump has an airborne arc: after takeoff, the feet/hips must begin
 	// descending from their peak. This is intentionally not a strict "feet back
 	// on ground" check, which is often lost by a phone camera at landing.
-	JUMP_MIN_DESCENT_FROM_PEAK_SW: 0.035,
+	JUMP_MIN_DESCENT_FROM_PEAK_SW: 0.02,
 	JUMP_MIN_FALL_SPEED_SW_S: 0.08,
 	JUMP_MAX_AIR_MS: 1_800,
 	MAX_TORSO_LEAN_DEG: 45,
 	JUMP_MAX_TORSO_LEAN_DEG: 70,
 	MIN_REP_MS: 350,
+	// A verified jump already contains loading, takeoff, and descent, so a short
+	// debounce is enough and does not suppress quick back-to-back repetitions.
+	JUMP_MIN_REP_MS: 250,
 	MIN_BOTTOM_TO_PULSE_MS: 120,
 	HOLD_MIN_MS: 750,
 	HOLD_GRACE_MS: 250,

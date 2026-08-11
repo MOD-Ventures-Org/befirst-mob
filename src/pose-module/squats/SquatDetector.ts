@@ -99,7 +99,7 @@ export class SquatDetector {
 
 	private state: MovementState = 'INIT';
 	private counts: SquatRepCounts = { ...EMPTY_COUNTS };
-	private lastRepMs = 0;
+	private lastRepMs: number | null = null;
 	private bottomStartedAtMs = 0;
 	private ground: GroundBaseline | null = null;
 	private takeoffEvidenceSinceMs: number | null = null;
@@ -128,7 +128,9 @@ export class SquatDetector {
 			return this.pause(nowMs, 'Face the camera and keep your torso upright');
 		}
 
-		const isBottom = metrics.kneeAngle <= SQUAT_PARAMS.BOTTOM_KNEE_ANGLE;
+		const bottomKneeAngle =
+			this.mode === 'jump' ? SQUAT_PARAMS.JUMP_BOTTOM_KNEE_ANGLE : SQUAT_PARAMS.BOTTOM_KNEE_ANGLE;
+		const isBottom = metrics.kneeAngle <= bottomKneeAngle;
 		const remainsLow = metrics.kneeAngle <= SQUAT_PARAMS.BOTTOM_EXIT_KNEE_ANGLE;
 		const atTop = metrics.kneeAngle >= SQUAT_PARAMS.TOP_KNEE_ANGLE;
 		if (!atTop) this.jumpTopReachedAtMs = null;
@@ -166,6 +168,7 @@ export class SquatDetector {
 					this.setGroundBaseline(metrics, nowMs);
 					this.state = 'TOP';
 				} else if (
+					this.mode === 'standard' &&
 					metrics.kneeAngle >= SQUAT_PARAMS.PULSE_UP_MIN_KNEE_ANGLE &&
 					metrics.kneeAngle <= SQUAT_PARAMS.PULSE_UP_MAX_KNEE_ANGLE &&
 					nowMs - this.bottomStartedAtMs >= SQUAT_PARAMS.MIN_BOTTOM_TO_PULSE_MS
@@ -193,7 +196,9 @@ export class SquatDetector {
 					// ground-contact test, this remains robust when one ankle is hidden
 					// at landing; unlike takeoff alone, it rejects normal squat ascents.
 					if (this.mode === 'jump') rep = this.count('jump', nowMs);
-					this.setGroundBaseline(metrics, nowMs);
+					// The first descending frame is still airborne. Keep the last
+					// grounded reference so an immediate landing dip can arm the next
+					// jump without requiring the athlete to pause at standing.
 					this.clearJumpEvent();
 					this.state = 'TOP';
 				} else if (nowMs - this.jumpAirStartedAtMs >= SQUAT_PARAMS.JUMP_MAX_AIR_MS) {
@@ -254,7 +259,7 @@ export class SquatDetector {
 	reset(): void {
 		this.state = 'INIT';
 		this.counts = { ...EMPTY_COUNTS };
-		this.lastRepMs = 0;
+		this.lastRepMs = null;
 		this.bottomStartedAtMs = 0;
 		this.ground = null;
 		this.clearJumpEvent();
@@ -462,7 +467,8 @@ export class SquatDetector {
 	}
 
 	private count(variant: SquatVariant, nowMs: number): SquatRep | undefined {
-		if (nowMs - this.lastRepMs < SQUAT_PARAMS.MIN_REP_MS) return undefined;
+		const minRepMs = variant === 'jump' ? SQUAT_PARAMS.JUMP_MIN_REP_MS : SQUAT_PARAMS.MIN_REP_MS;
+		if (this.lastRepMs !== null && nowMs - this.lastRepMs < minRepMs) return undefined;
 		this.counts[variant] += 1;
 		this.lastRepMs = nowMs;
 		return { variant, totalReps: this.totalReps() };

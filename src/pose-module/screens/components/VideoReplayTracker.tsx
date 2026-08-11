@@ -13,7 +13,7 @@ export type ReplayExercise = 'pushup-pyramid' | 'squat' | 'jump-squat' | 'banded
 
 // Keep this in sync with App.tsx. Set to true when Jump Squats are ready to
 // be exposed again.
-const SHOW_JUMP_SQUATS = false;
+const SHOW_JUMP_SQUATS = true;
 
 // Twenty analysed frames per second preserves the short airborne arc of quick
 // professional jumps while remaining practical for an offline developer run.
