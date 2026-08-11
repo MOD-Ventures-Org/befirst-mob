@@ -1,7 +1,9 @@
 node_modules/
+.venv-docs/
 .expo/
 .expo-shared/
 dist/
+site/
 ios/
 android/
 *.log
