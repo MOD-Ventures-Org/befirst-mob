@@ -5,7 +5,7 @@ import { getThumbnailAsync } from 'expo-video-thumbnails';
 import { useVideoPlayer, VideoView } from 'expo-video';
 
 import { usePoseSession } from '../../hooks/usePoseSession';
-import type { BandedSideStepTrackingState } from '../../side-steps/BandedSideStepDetector';
+import type { BandedSideStepTrackingState, SideStepMeasurement } from '../../side-steps/BandedSideStepDetector';
 import type { SquatTrackingState } from '../../squats/SquatDetector';
 import SkiaSkeletonOverlay from './SkiaSkeletonOverlay';
 
@@ -66,6 +66,24 @@ function jumpSignalSummary(squatTracking: SquatTrackingState): string | null {
 	return `${diagnostics.state.toUpperCase()} · feet ${signal(diagnostics.leftFootRiseSW)} / ${signal(diagnostics.rightFootRiseSW)} · hip ${signal(diagnostics.pelvisRiseSW)}`;
 }
 
+function compactStepDistance(step: SideStepMeasurement): string {
+	const direction = step.direction === 'left' ? 'L' : 'R';
+	const distance = step.estimatedDistanceCm === null ? `${step.distanceSW.toFixed(2)} SW` : `≈${Math.round(step.estimatedDistanceCm)} cm`;
+	return `${direction}${step.id} ${distance}`;
+}
+
+function sideStepDistanceSummary(sideStepTracking: BandedSideStepTrackingState): string | null {
+	const current = sideStepTracking.activeStep ?? sideStepTracking.lastStep;
+	if (!current) return null;
+	const state = sideStepTracking.activeStep ? 'CURRENT' : 'LAST';
+	const direction = current.direction.toUpperCase();
+	const primary = current.estimatedDistanceCm === null
+		? `${current.distanceSW.toFixed(2)} shoulder widths`
+		: `≈${Math.round(current.estimatedDistanceCm)} cm · ${current.distanceSW.toFixed(2)} SW`;
+	const recent = sideStepTracking.stepHistory.slice(-5).map(compactStepDistance).join(' · ');
+	return `${state} ${direction} · ${primary}\nAverage ${sideStepTracking.averageDistanceSW?.toFixed(2) ?? '—'} SW · Longest ${sideStepTracking.longestDistanceSW?.toFixed(2) ?? '—'} SW\n${recent}`;
+}
+
 function ReplayRun({ asset, exercise, onChooseAnother, onClose }: ReplayRunProps) {
 	const player = useVideoPlayer(asset.uri, currentPlayer => {
 		currentPlayer.muted = true;
@@ -93,6 +111,7 @@ function ReplayRun({ asset, exercise, onChooseAnother, onClose }: ReplayRunProps
 	const durationMs = Math.round(asset.duration ?? 0);
 	const breakdown = lowerBreakdown(exercise, squatTracking, sideStepTracking);
 	const jumpSignals = exercise === 'jump-squat' ? jumpSignalSummary(squatTracking) : null;
+	const sideStepDistances = exercise === 'banded-side-step' ? sideStepDistanceSummary(sideStepTracking) : null;
 
 	useEffect(
 		() => () => {
@@ -197,6 +216,7 @@ function ReplayRun({ asset, exercise, onChooseAnother, onClose }: ReplayRunProps
 					{breakdown ? <Text style={styles.breakdown}>{breakdown}</Text> : null}
 					{trackingDetail ? <Text style={styles.detail}>{trackingDetail}</Text> : null}
 					{jumpSignals ? <Text style={styles.diagnostics}>{jumpSignals}</Text> : null}
+					{sideStepDistances ? <Text style={styles.diagnostics}>{sideStepDistances}</Text> : null}
 					{initError || error ? <Text style={styles.error}>{initError ?? error}</Text> : null}
 				</View>
 

@@ -1,6 +1,6 @@
-import { angleAt, conf, dist, midpoint, shoulderWidth } from '../geometry';
+import { angleAt, conf, dist, midpoint, shoulderWidth, worldShoulderWidth } from '../geometry';
 import { SQUAT_PARAMS } from '../exercises/squat.config';
-import type { FootLandmarks, FootVisibility, JointVisibility, Skeleton } from '../types';
+import type { FootLandmarks, FootVisibility, JointVisibility, Skeleton, WorldSkeleton } from '../types';
 
 export interface SquatMetrics {
 	kneeAngle: number;
@@ -20,6 +20,10 @@ export interface SquatMetrics {
 	rightFootY?: number;
 	leftFootConfidence?: number;
 	rightFootConfidence?: number;
+	// Optional metric scale from MediaPipe world landmarks. The detector keeps
+	// shoulder-width units as the source of truth and uses this only to show an
+	// approximate centimetre value.
+	estimatedShoulderWidthM?: number;
 }
 
 const REQUIRED_JOINTS: (keyof Skeleton)[] = [
@@ -50,6 +54,7 @@ export interface SquatMeasurementOptions {
 	// Side-view exercise videos often occlude the rear leg. Jump Squats can use
 	// the visible leg plus pelvis motion; side steps still require both legs.
 	allowSingleSide?: boolean;
+	world?: WorldSkeleton;
 }
 
 function lowestVisibleFootPoint(
@@ -130,6 +135,7 @@ export function measureSquat(
 	// normalization stable without changing ordinary front-view scale.
 	const width = allowSingleSide ? Math.max(frontWidth, hipWidth, torsoScale) : frontWidth;
 	if (width <= 0) return null;
+	const estimatedShoulderWidthM = options.world ? worldShoulderWidth(options.world) : undefined;
 	const leftFoot = lowestVisibleFootPoint(skeleton, visibility, feet?.skeleton, feet?.visibility, 'left');
 	const rightFoot = lowestVisibleFootPoint(skeleton, visibility, feet?.skeleton, feet?.visibility, 'right');
 	const legConfidence = (side: 'left' | 'right') =>
@@ -155,5 +161,8 @@ export function measureSquat(
 		rightFootY: rightFoot.y,
 		leftFootConfidence: Math.min(leftFoot.confidence, legConfidence('left')),
 		rightFootConfidence: Math.min(rightFoot.confidence, legConfidence('right')),
+		...(estimatedShoulderWidthM && Number.isFinite(estimatedShoulderWidthM)
+			? { estimatedShoulderWidthM }
+			: {}),
 	};
 }

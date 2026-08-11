@@ -11,7 +11,7 @@ import {
 	type PyramidLevel,
 } from './src/pose-module/pyramid/pyramid';
 import type { PyramidPhase } from './src/pose-module/hooks/usePyramidSession';
-import type { SideStepDirection } from './src/pose-module/side-steps/BandedSideStepDetector';
+import type { SideStepDirection, SideStepMeasurement } from './src/pose-module/side-steps/BandedSideStepDetector';
 import type { SquatVariant } from './src/pose-module/squats/SquatDetector';
 import { DebugPanel } from './src/pose-module/screens/components/DebugPanel';
 import PermissionPlaceholder from './src/pose-module/screens/components/PermissionPlaceholder';
@@ -54,6 +54,17 @@ function formatHoldDuration(durationMs: number): string {
 	const minutes = Math.floor(totalSeconds / 60);
 	const seconds = (totalSeconds % 60).toFixed(1).padStart(4, '0');
 	return `${minutes}:${seconds}`;
+}
+
+function formatSideStepDistance(step: SideStepMeasurement): string {
+	const relative = `${step.distanceSW.toFixed(2)} shoulder widths`;
+	return step.estimatedDistanceCm === null ? relative : `≈${Math.round(step.estimatedDistanceCm)} cm · ${relative}`;
+}
+
+function formatCompactSideStepDistance(step: SideStepMeasurement): string {
+	const direction = step.direction === 'left' ? 'L' : 'R';
+	const distance = step.estimatedDistanceCm === null ? `${step.distanceSW.toFixed(2)} SW` : `≈${Math.round(step.estimatedDistanceCm)} cm`;
+	return `${direction}${step.id} ${distance}`;
 }
 
 interface ExerciseTabsProps {
@@ -313,6 +324,8 @@ function WorkoutTracker({ exercise, onSelectExercise, onOpenVideoReplay }: Worko
 	const squatLastHold = squatTracking.holds[squatTracking.holds.length - 1];
 	const sideStepCurrentHold = sideStepTracking.activeHold;
 	const sideStepLastHold = sideStepTracking.holds[sideStepTracking.holds.length - 1];
+	const sideStepDistance = sideStepTracking.activeStep ?? sideStepTracking.lastStep;
+	const recentSideStepDistances = sideStepTracking.stepHistory.slice(-4).map(formatCompactSideStepDistance).join(' · ');
 	const holdToShow = isSquatExercise ? squatCurrentHold ?? squatLastHold : sideStepCurrentHold ?? sideStepLastHold;
 	const isHolding = isSquatExercise ? squatCurrentHold !== null : sideStepCurrentHold !== null;
 	const holdCopy = isJumpSquat
@@ -368,16 +381,35 @@ function WorkoutTracker({ exercise, onSelectExercise, onOpenVideoReplay }: Worko
 							</View>
 						</View>
 					) : isBandedSideStep ? (
-						<View style={styles.squatCounts}>
-							<View style={styles.squatCountItem}>
-								<Text style={styles.squatCountLabel}>Left</Text>
-								<Text style={styles.squatCountValue}>{sideStepTracking.leftSteps}</Text>
+						<>
+							<View style={styles.squatCounts}>
+								<View style={styles.squatCountItem}>
+									<Text style={styles.squatCountLabel}>Left</Text>
+									<Text style={styles.squatCountValue}>{sideStepTracking.leftSteps}</Text>
+								</View>
+								<View style={styles.squatCountItem}>
+									<Text style={styles.squatCountLabel}>Right</Text>
+									<Text style={styles.squatCountValue}>{sideStepTracking.rightSteps}</Text>
+								</View>
 							</View>
-							<View style={styles.squatCountItem}>
-								<Text style={styles.squatCountLabel}>Right</Text>
-								<Text style={styles.squatCountValue}>{sideStepTracking.rightSteps}</Text>
+							<View style={styles.stepDistanceReadout}>
+								<Text style={styles.stepDistanceLabel}>
+									{sideStepTracking.activeStep
+										? `Current ${directionLabel[sideStepTracking.activeStep.direction]}`
+										: sideStepTracking.lastStep
+											? `Last ${directionLabel[sideStepTracking.lastStep.direction]}`
+											: 'Step distance'}
+								</Text>
+								<Text style={[styles.stepDistanceValue, sideStepTracking.activeStep && styles.stepDistanceValueActive]}>
+									{sideStepDistance ? formatSideStepDistance(sideStepDistance) : '—'}
+								</Text>
+								<Text style={styles.stepDistanceSummary}>
+									Average {sideStepTracking.averageDistanceSW?.toFixed(2) ?? '—'} SW · Longest{' '}
+									{sideStepTracking.longestDistanceSW?.toFixed(2) ?? '—'} SW
+								</Text>
+								{recentSideStepDistances ? <Text style={styles.stepDistanceHistory}>{recentSideStepDistances}</Text> : null}
 							</View>
-						</View>
+						</>
 					) : (
 						<View style={styles.squatCounts}>
 							<View style={styles.squatCountItem}>
@@ -786,6 +818,43 @@ const styles = StyleSheet.create({
 		color: 'white',
 		fontSize: 24,
 		fontWeight: '800',
+	},
+	stepDistanceReadout: {
+		alignSelf: 'stretch',
+		alignItems: 'center',
+		marginTop: 10,
+		paddingTop: 10,
+		borderTopWidth: StyleSheet.hairlineWidth,
+		borderTopColor: '#575757',
+	},
+	stepDistanceLabel: {
+		color: '#bdbdbd',
+		fontSize: 12,
+		fontWeight: '600',
+	},
+	stepDistanceValue: {
+		marginTop: 3,
+		color: 'white',
+		fontSize: 17,
+		fontWeight: '800',
+		textAlign: 'center',
+	},
+	stepDistanceValueActive: {
+		color: '#ffcf9f',
+	},
+	stepDistanceSummary: {
+		marginTop: 4,
+		color: '#d4d4d4',
+		fontSize: 11,
+		fontWeight: '600',
+		textAlign: 'center',
+	},
+	stepDistanceHistory: {
+		marginTop: 4,
+		maxWidth: 300,
+		color: '#9ea6b4',
+		fontSize: 10,
+		textAlign: 'center',
 	},
 	holdReadout: {
 		alignSelf: 'stretch',

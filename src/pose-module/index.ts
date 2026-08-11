@@ -15,4 +15,5 @@ export type {
 	BandedSideStepTrackingState,
 	SideStepDirection,
 	SideStepHold,
+	SideStepMeasurement,
 } from './side-steps/BandedSideStepDetector';

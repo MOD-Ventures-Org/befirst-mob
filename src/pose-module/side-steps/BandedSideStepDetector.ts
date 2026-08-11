@@ -14,25 +14,43 @@ export interface ActiveSideStepHold {
 	durationMs: number;
 }
 
+export interface SideStepMeasurement {
+	id: number;
+	direction: SideStepDirection;
+	// Lead-foot travel normalized by the athlete's shoulder width. This stays
+	// comparable when the athlete moves closer to or farther from the camera.
+	distanceSW: number;
+	// MediaPipe world landmarks are metric estimates. Keep centimetres nullable
+	// so older native bridges still expose the reliable relative measurement.
+	estimatedDistanceCm: number | null;
+}
+
 export interface BandedSideStepTrackingState {
 	leftSteps: number;
 	rightSteps: number;
 	totalSteps: number;
 	activeDirection: SideStepDirection | null;
+	activeStep: SideStepMeasurement | null;
+	lastStep: SideStepMeasurement | null;
+	stepHistory: SideStepMeasurement[];
+	averageDistanceSW: number | null;
+	longestDistanceSW: number | null;
 	activeHold: ActiveSideStepHold | null;
 	holds: SideStepHold[];
 	status: string;
 }
 
 export interface BandedSideStepUpdate extends BandedSideStepTrackingState {
-	step?: { direction: SideStepDirection; totalSteps: number };
+	step?: SideStepMeasurement & { totalSteps: number };
 	completedHold?: SideStepHold;
 }
 
 interface FootBaseline {
 	leftX: number;
 	rightX: number;
+	shoulderWidthPx: number;
 	stanceWidth: number;
+	estimatedShoulderWidthM: number | null;
 }
 
 interface ActiveLead {
@@ -40,7 +58,9 @@ interface ActiveLead {
 	// +1/-1 is derived from the current anatomical landmark ordering, so it is
 	// correct for both mirrored Android previews and unmirrored iOS previews.
 	screenDirection: number;
+	leadStartX: number;
 	trailingStartX: number;
+	measurementId: number;
 }
 
 type StepState = 'READY' | 'LEADING';
@@ -58,7 +78,9 @@ export class BandedSideStepDetector {
 	private activeLead: ActiveLead | null = null;
 	private leftSteps = 0;
 	private rightSteps = 0;
-	private lastStepMs = 0;
+	private lastStepMs: number | null = null;
+	private stepHistory: SideStepMeasurement[] = [];
+	private nextStepId = 1;
 	private previous: { pelvisY: number; leftX: number; rightX: number; atMs: number } | null = null;
 	private holdStartedAtMs: number | null = null;
 	private holdLastStableAtMs = 0;
@@ -96,32 +118,38 @@ export class BandedSideStepDetector {
 			const leftDirection = Math.sign(this.baseline.leftX - this.baseline.rightX) || -1;
 			const rightDirection = Math.sign(this.baseline.rightX - this.baseline.leftX) || 1;
 			const leftLeadDistance =
-				((metrics.leftAnkleX - this.baseline.leftX) * leftDirection) / metrics.shoulderWidth;
+				((metrics.leftAnkleX - this.baseline.leftX) * leftDirection) / this.baseline.shoulderWidthPx;
 			const rightLeadDistance =
-				((metrics.rightAnkleX - this.baseline.rightX) * rightDirection) / metrics.shoulderWidth;
+				((metrics.rightAnkleX - this.baseline.rightX) * rightDirection) / this.baseline.shoulderWidthPx;
 			if (
 				leftLeadDistance >= BANDED_SIDE_STEP_PARAMS.LEAD_DISTANCE_MIN_SW ||
 				rightLeadDistance >= BANDED_SIDE_STEP_PARAMS.LEAD_DISTANCE_MIN_SW
 			) {
 				const direction: SideStepDirection = leftLeadDistance >= rightLeadDistance ? 'left' : 'right';
-				step = this.count(direction, nowMs);
+				const distanceSW = direction === 'left' ? leftLeadDistance : rightLeadDistance;
+				step = this.count(direction, distanceSW, nowMs);
 				if (step) {
 					this.state = 'LEADING';
 					this.activeDirection = direction;
 					this.activeLead = {
 						direction,
 						screenDirection: direction === 'left' ? leftDirection : rightDirection,
+						leadStartX: direction === 'left' ? this.baseline.leftX : this.baseline.rightX,
 						trailingStartX: direction === 'left' ? this.baseline.rightX : this.baseline.leftX,
+						measurementId: step.id,
 					};
 					this.status = `Lead ${direction} detected — bring the other foot in`;
 				}
 			}
-		} else if (this.trailingFootCaughtUp(metrics) || this.hasClosedStance(metrics)) {
-			this.setBaseline(metrics);
-			this.state = 'READY';
-			this.activeDirection = null;
-			this.activeLead = null;
-			this.status = 'Step outward with the next foot';
+		} else {
+			this.updateActiveStepDistance(metrics);
+			if (this.trailingFootCaughtUp(metrics) || this.hasClosedStance(metrics)) {
+				this.setBaseline(metrics);
+				this.state = 'READY';
+				this.activeDirection = null;
+				this.activeLead = null;
+				this.status = 'Step outward with the next foot';
+			}
 		}
 
 		const completedHold = this.updateHold(
@@ -169,7 +197,9 @@ export class BandedSideStepDetector {
 		this.activeLead = null;
 		this.leftSteps = 0;
 		this.rightSteps = 0;
-		this.lastStepMs = 0;
+		this.lastStepMs = null;
+		this.stepHistory = [];
+		this.nextStepId = 1;
 		this.previous = null;
 		this.lowSquatLostAtMs = null;
 		this.holdStartedAtMs = null;
@@ -180,11 +210,20 @@ export class BandedSideStepDetector {
 	}
 
 	snapshot(nowMs = Date.now()): BandedSideStepTrackingState {
+		const activeStep = this.activeStep();
+		const lastStep = this.stepHistory[this.stepHistory.length - 1] ?? null;
+		const distances = this.stepHistory.map(step => step.distanceSW);
 		return {
 			leftSteps: this.leftSteps,
 			rightSteps: this.rightSteps,
 			totalSteps: this.leftSteps + this.rightSteps,
 			activeDirection: this.activeDirection,
+			activeStep: activeStep ? { ...activeStep } : null,
+			lastStep: lastStep ? { ...lastStep } : null,
+			stepHistory: this.stepHistory.map(step => ({ ...step })),
+			averageDistanceSW:
+				distances.length > 0 ? distances.reduce((total, distance) => total + distance, 0) / distances.length : null,
+			longestDistanceSW: distances.length > 0 ? Math.max(...distances) : null,
 			activeHold: this.activeHold(nowMs),
 			holds: [...this.holds],
 			status: this.status,
@@ -230,8 +269,29 @@ export class BandedSideStepDetector {
 		this.baseline = {
 			leftX: metrics.leftAnkleX,
 			rightX: metrics.rightAnkleX,
+			shoulderWidthPx: metrics.shoulderWidth,
 			stanceWidth: Math.abs(metrics.rightAnkleX - metrics.leftAnkleX) / metrics.shoulderWidth,
+			estimatedShoulderWidthM: metrics.estimatedShoulderWidthM ?? null,
 		};
+	}
+
+	private updateActiveStepDistance(metrics: SquatMetrics): void {
+		const lead = this.activeLead;
+		if (!lead || !this.baseline) return;
+		const leadX = lead.direction === 'left' ? metrics.leftAnkleX : metrics.rightAnkleX;
+		const distanceSW = Math.max(
+			0,
+			((leadX - lead.leadStartX) * lead.screenDirection) / this.baseline.shoulderWidthPx,
+		);
+		const index = this.stepHistory.findIndex(step => step.id === lead.measurementId);
+		if (index < 0 || distanceSW <= this.stepHistory[index].distanceSW) return;
+		this.stepHistory[index] = this.measurement(lead.measurementId, lead.direction, distanceSW);
+	}
+
+	private activeStep(): SideStepMeasurement | null {
+		if (!this.activeLead) return null;
+		const measurementId = this.activeLead.measurementId;
+		return this.stepHistory.find(step => step.id === measurementId) ?? null;
 	}
 
 	private hasClosedStance(metrics: SquatMetrics): boolean {
@@ -248,12 +308,25 @@ export class BandedSideStepDetector {
 		return trailingTravel >= BANDED_SIDE_STEP_PARAMS.TRAIL_DISTANCE_MIN_SW;
 	}
 
-	private count(direction: SideStepDirection, nowMs: number): BandedSideStepUpdate['step'] {
-		if (nowMs - this.lastStepMs < BANDED_SIDE_STEP_PARAMS.MIN_STEP_MS) return undefined;
+	private count(direction: SideStepDirection, distanceSW: number, nowMs: number): BandedSideStepUpdate['step'] {
+		if (this.lastStepMs !== null && nowMs - this.lastStepMs < BANDED_SIDE_STEP_PARAMS.MIN_STEP_MS) return undefined;
 		if (direction === 'left') this.leftSteps += 1;
 		else this.rightSteps += 1;
 		this.lastStepMs = nowMs;
-		return { direction, totalSteps: this.leftSteps + this.rightSteps };
+		const measurement = this.measurement(this.nextStepId++, direction, distanceSW);
+		this.stepHistory.push(measurement);
+		return { ...measurement, totalSteps: this.leftSteps + this.rightSteps };
+	}
+
+	private measurement(id: number, direction: SideStepDirection, distanceSW: number): SideStepMeasurement {
+		return {
+			id,
+			direction,
+			distanceSW,
+			estimatedDistanceCm: this.baseline?.estimatedShoulderWidthM
+				? distanceSW * this.baseline.estimatedShoulderWidthM * 100
+				: null,
+		};
 	}
 
 	private updateHold(stableInPosition: boolean, nowMs: number): SideStepHold | undefined {

@@ -294,6 +294,11 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 			rightSteps: update.rightSteps,
 			totalSteps: update.totalSteps,
 			activeDirection: update.activeDirection,
+			activeStep: update.activeStep,
+			lastStep: update.lastStep,
+			stepHistory: update.stepHistory,
+			averageDistanceSW: update.averageDistanceSW,
+			longestDistanceSW: update.longestDistanceSW,
 			activeHold: update.activeHold,
 			holds: update.holds,
 			status: update.status,
@@ -447,7 +452,7 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 						frame.skeleton,
 						frame.visibility,
 						frame.feet ? { skeleton: frame.feet.skeleton, visibility: frame.feet.visibility } : undefined,
-						{ allowSingleSide: isJumpSquat },
+						{ allowSingleSide: isJumpSquat, world: frame.world },
 					)
 				: null;
 			if (squatMetrics) lastLowerBodyTrackedMs.current = now;

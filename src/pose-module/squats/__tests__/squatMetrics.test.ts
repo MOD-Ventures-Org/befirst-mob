@@ -1,5 +1,5 @@
 import { hasTrackableSquatBody, measureSquat } from '../squatMetrics';
-import type { FootLandmarks, FootVisibility, JointVisibility, Skeleton } from '../../types';
+import type { FootLandmarks, FootVisibility, JointVisibility, Skeleton, WorldSkeleton } from '../../types';
 
 const skeleton: Skeleton = {
 	nose: { x: 50, y: 10 },
@@ -93,6 +93,18 @@ describe('squat metrics', () => {
 			shoulderWidth: expect.any(Number),
 			leftFootConfidence: 0.9,
 			rightFootConfidence: 0.1,
-		});
+			});
+	});
+
+	it('exposes MediaPipe world shoulder width as an optional metric scale', () => {
+		const world = Object.fromEntries(
+			Object.keys(skeleton).map(joint => [joint, { x: 0, y: 0, z: 0 }]),
+		) as WorldSkeleton;
+		world.leftShoulder = { x: -0.2, y: 0, z: 0 };
+		world.rightShoulder = { x: 0.2, y: 0, z: 0 };
+
+		const metrics = measureSquat(skeleton, visibility(0.9), undefined, { world });
+
+		expect(metrics?.estimatedShoulderWidthM).toBeCloseTo(0.4);
 	});
 });
