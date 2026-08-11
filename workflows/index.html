@@ -1,0 +1,1140 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Architecture, engineering history, operations, and technical direction for the BeFirst on-device pose-tracking module.">
+      
+      
+      
+      
+        <link rel="prev" href="../architecture/">
+      
+      
+        <link rel="next" href="../engineering-history/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Data Flows & Workflows - BeFirst Pose Module — Technical White Paper</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="orange">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#data-flows-workflows" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="BeFirst Pose Module — Technical White Paper" class="md-header__button md-logo" aria-label="BeFirst Pose Module — Technical White Paper" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            BeFirst Pose Module — Technical White Paper
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Data Flows & Workflows
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-orange" data-md-color-accent="orange"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-orange" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/usmanthesuper/befirst-mob" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    usmanthesuper/befirst-mob
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="BeFirst Pose Module — Technical White Paper" class="md-nav__button md-logo" aria-label="BeFirst Pose Module — Technical White Paper" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    BeFirst Pose Module — Technical White Paper
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/usmanthesuper/befirst-mob" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    usmanthesuper/befirst-mob
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    White Paper
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../context-and-capabilities/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Context & Capabilities
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Flows & Workflows
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Flows & Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#live-camera-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Live camera flow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shared-pre-processing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared pre-processing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#push-up-counting-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Push-up counting flow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pyramid-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pyramid workflow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#squat-and-jump-squat-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Squat and jump-squat workflow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Squat and jump-squat workflow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shared-measurement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared measurement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#standard-squat-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standard squat mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jump-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Jump mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#side-step-workflow-and-distance-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Side-step workflow and distance data
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#developer-replay-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Developer replay flow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#session-output-and-in-memory-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Session output and in-memory data
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../engineering-history/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Engineering Evolution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../technology-and-data/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Technology & Data
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations & Quality
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../decisions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Decisions & Trade-offs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../limitations-and-roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Limitations & Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../glossary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Glossary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#live-camera-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Live camera flow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shared-pre-processing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared pre-processing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#push-up-counting-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Push-up counting flow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pyramid-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pyramid workflow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#squat-and-jump-squat-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Squat and jump-squat workflow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Squat and jump-squat workflow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shared-measurement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared measurement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#standard-squat-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Standard squat mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jump-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Jump mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#side-step-workflow-and-distance-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Side-step workflow and distance data
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#developer-replay-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Developer replay flow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#session-output-and-in-memory-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Session output and in-memory data
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="data-flows-workflows">Data Flows &amp; Workflows<a class="headerlink" href="#data-flows-workflows" title="Permanent link">&para;</a></h1>
+<h2 id="live-camera-flow">Live camera flow<a class="headerlink" href="#live-camera-flow" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>sequenceDiagram
+    autonumber
+    actor User
+    participant App as Workout screen
+    participant Camera as Vision Camera
+    participant MP as MediaPipe bridge
+    participant Session as usePoseSession
+    participant Detector as Exercise detector
+    participant Overlay as Reanimated + Skia
+
+    User-&gt;&gt;App: Grant camera permission
+    App-&gt;&gt;Camera: Mount front camera with active profile
+    Camera-&gt;&gt;MP: Deliver RGB frame
+    alt inference already running on Android
+        MP--&gt;&gt;Camera: Skip frame
+    else detector available
+        MP-&gt;&gt;MP: GPU pose inference
+        MP--&gt;&gt;Session: Result bundle + view coordinator
+        Session-&gt;&gt;Session: Map landmarks and verify subject continuity
+        par visual branch
+            Session-&gt;&gt;Overlay: Stabilized RenderPose shared value
+            Overlay--&gt;&gt;User: Draw skeleton without React frame render
+        and exercise branch
+            Session-&gt;&gt;Detector: Raw scale-normalized metrics + timestamp
+            Detector--&gt;&gt;Session: Rep/step/hold/status update
+            Session--&gt;&gt;App: Throttled UI state or immediate discrete event
+            App--&gt;&gt;User: Count and coaching feedback
+        end
+    end</code></pre>
+<p>The native bridge is configured for one pose and a GPU delegate. A <code>ViewCoordinator</code> supplied by the bridge handles frame orientation, preview fit, and front-camera mirroring when converting landmark positions. Output orientation is forced to portrait, while camera/frame orientation remains available to the conversion layer.</p>
+<h2 id="shared-pre-processing">Shared pre-processing<a class="headerlink" href="#shared-pre-processing" title="Permanent link">&para;</a></h2>
+<p>Every accepted result follows the same initial path:</p>
+<ol>
+<li><code>toSkeleton</code> validates that 33 landmarks exist and constructs view, normalized, world, confidence, and foot structures.</li>
+<li><code>SubjectLock</code> accepts, rejects, or eventually relocks the pose using shoulder position and scale continuity.</li>
+<li>Missing or rejected results increment a gap counter, clear the game-detection confidence, and feed a no-body frame into the visual stabilizer.</li>
+<li>Accepted view landmarks are smoothed only for rendering and angle/form display.</li>
+<li>Performance samples and processed-frame counts feed the Android tier evaluator.</li>
+</ol>
+<p>After more than five consecutive missing frames, filter and velocity state is reset. The workout count itself is preserved; lower-body detectors pause after their tracking-gap allowance, and the UI asks the user to return to frame.</p>
+<h2 id="push-up-counting-flow">Push-up counting flow<a class="headerlink" href="#push-up-counting-flow" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>flowchart TD
+    A["Accepted raw PoseFrame"] --&gt; B["worldArmExtension"]
+    B --&gt;|"world unavailable / invalid"| C["2-D bodyExtension fallback"]
+    B --&gt; D["Extension signal"]
+    C --&gt; D
+    D --&gt; E{"Body upright?"}
+    E --&gt;|yes| V["Veto counting&lt;br/&gt;reset signal after timeout"]
+    E --&gt;|no| F["Compute wrist velocities"]
+    F --&gt; G{"Wrists traveling too quickly?"}
+    G --&gt;|yes| H["Reset learned oscillation signal&lt;br/&gt;keep cumulative count"]
+    G --&gt;|no| I["RepDetector&lt;br/&gt;decaying min/max envelope"]
+    I --&gt; J{"Top → bottom → top&lt;br/&gt;with range and refractory checks"}
+    J --&gt;|yes| K["Increment visible count&lt;br/&gt;emit one onRep event"]
+    J --&gt;|no| L["Continue observing"]
+
+    A --&gt; M["Smoothed angles + velocities"]
+    M --&gt; N["StateMachine + FormChecker"]
+    N --&gt; O["Parallel phase and RepResult history"]</code></pre>
+<p>The primary signal is 3-D shoulder-to-wrist extension normalized by world shoulder width. A 2-D shoulder-to-wrist vertical gap remains as a compatibility fallback. The counter learns the athlete's current motion range instead of relying on one fixed elbow angle, because elbow confidence can collapse at the bottom of a push-up.</p>
+<p>Two guards address false counts visible in the code's issue history:</p>
+<ul>
+<li><code>isUprightExtended</code> rejects a standing body using knee/ankle span below the shoulders rather than a torso-angle assumption that fails with a floor-facing phone.</li>
+<li>Excessive wrist travel resets the oscillation envelope because crawling toward the phone can resemble a push-up depth cycle even though the hands are not planted.</li>
+</ul>
+<p>The visible repetition count and <code>onRep</code> event come from <code>RepDetector</code>. A phase <code>StateMachine</code> and <code>FormChecker</code> run in parallel to build form-oriented <code>RepResult</code> objects. This dual mechanism is an explicit current behavior and creates a summary-alignment risk discussed under <a href="../limitations-and-roadmap/#session-and-domain-semantics">limitations</a>.</p>
+<h2 id="pyramid-workflow">Pyramid workflow<a class="headerlink" href="#pyramid-workflow" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>stateDiagram-v2
+    [*] --&gt; READY
+    READY --&gt; SET_ACTIVE: choose level / start detector
+    SET_ACTIVE --&gt; SET_DONE: set target reached
+    SET_DONE --&gt; REST: 500 ms
+    SET_DONE --&gt; SET_ACTIVE: rep starts next set early
+    REST --&gt; SET_ACTIVE: countdown expires
+    REST --&gt; SET_ACTIVE: rep starts next set early
+    SET_ACTIVE --&gt; CELEBRATE: final set reached / stop detector
+    CELEBRATE --&gt; COMPLETE: 5 s
+    COMPLETE --&gt; SET_ACTIVE: climb again
+    COMPLETE --&gt; READY: choose another level
+    SET_ACTIVE --&gt; READY: explicit exit
+    SET_DONE --&gt; READY: explicit exit
+    REST --&gt; READY: explicit exit
+    CELEBRATE --&gt; READY: explicit exit</code></pre>
+<p>For level 3, the targets are <code>1, 2, 3, 2, 1</code>, totaling 9. For levels 4 and 5, totals are 16 and 25. The hook keeps fast-changing counters in refs and publishes phase state for the UI. A lightweight 100 ms ticker owns time-based transitions; repetition correctness remains in <code>usePoseSession</code>.</p>
+<h2 id="squat-and-jump-squat-workflow">Squat and jump-squat workflow<a class="headerlink" href="#squat-and-jump-squat-workflow" title="Permanent link">&para;</a></h2>
+<h3 id="shared-measurement">Shared measurement<a class="headerlink" href="#shared-measurement" title="Permanent link">&para;</a></h3>
+<p><code>measureSquat</code> requires shoulders, hips, knees, and ankles at the configured confidence level. It derives averaged knee angle, torso lean, pelvis position, stance width, ankle positions, lowest visible foot points, and a normalization width. Jump mode may use one visible side and a fallback scale based on hip/torso dimensions when the projected shoulder span collapses in a side view.</p>
+<h3 id="standard-squat-mode">Standard squat mode<a class="headerlink" href="#standard-squat-mode" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>stateDiagram-v2
+    [*] --&gt; INIT
+    INIT --&gt; TOP: standing threshold
+    INIT --&gt; BOTTOM: starts low
+    TOP --&gt; BOTTOM: reaches bottom threshold
+    BOTTOM --&gt; PULSE_UP: rises within pulse band
+    PULSE_UP --&gt; BOTTOM: returns low / count pulse
+    BOTTOM --&gt; TOP: returns to standing / count standard
+    PULSE_UP --&gt; TOP: returns to standing / count standard</code></pre>
+<p>A separate velocity condition recognizes a stable bottom hold. A brief grace window prevents a tiny movement from immediately ending the hold.</p>
+<h3 id="jump-mode">Jump mode<a class="headerlink" href="#jump-mode" title="Permanent link">&para;</a></h3>
+<pre class="mermaid"><code>stateDiagram-v2
+    [*] --&gt; INIT
+    INIT --&gt; TOP: valid non-bottom frame
+    INIT --&gt; BOTTOM: loading position
+    TOP --&gt; BOTTOM: loading position
+    BOTTOM --&gt; JUMP_AIR: sustained foot + pelvis rise and upward speed
+    JUMP_AIR --&gt; TOP: descent from a verified peak / count jump
+    JUMP_AIR --&gt; INIT: event timeout</code></pre>
+<p>Jump evidence is based on elapsed milliseconds, not a fixed number of frames. Heel/toe landmarks supplement ankles. Both feet normally contribute; when one foot is not reliable, a larger rise from the visible foot plus pelvis evidence can qualify. A count occurs on verified descent from a peak rather than requiring a clearly visible ground-contact frame.</p>
+<h2 id="side-step-workflow-and-distance-data">Side-step workflow and distance data<a class="headerlink" href="#side-step-workflow-and-distance-data" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>stateDiagram-v2
+    [*] --&gt; READY
+    READY --&gt; READY: establish low-squat baseline
+    READY --&gt; LEADING: lead foot exceeds outward threshold / count step
+    LEADING --&gt; LEADING: update maximum lead-foot distance
+    LEADING --&gt; READY: trailing foot catches up or stance closes
+    READY --&gt; READY: next direction may begin</code></pre>
+<p>The baseline records both ankle X positions, the projected shoulder width, starting stance width, and optional world shoulder width. The direction multiplier is inferred from the anatomical ankle ordering, so a mirrored preview does not swap the meaning of left and right.</p>
+<p>For each step, the current implementation stores:</p>
+<ul>
+<li>Direction and monotonically assigned step ID.</li>
+<li>Maximum lead-foot travel in projected shoulder widths (<code>distanceSW</code>).</li>
+<li>Approximate centimetres when world shoulder width is available.</li>
+<li>Session average and longest distance in shoulder-width units.</li>
+</ul>
+<p>The shoulder-width value is the source of truth because it remains comparable as the athlete moves toward or away from the camera. The centimetre value inherits MediaPipe world-landmark estimation error and is not a calibrated tape measurement.</p>
+<h2 id="developer-replay-flow">Developer replay flow<a class="headerlink" href="#developer-replay-flow" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>sequenceDiagram
+    actor QA as Developer / QA
+    participant Picker as Image picker
+    participant Replay as VideoReplayTracker
+    participant Thumb as expo-video-thumbnails
+    participant MP as MediaPipe IMAGE mode
+    participant Pipe as Shared onResults pipeline
+
+    QA-&gt;&gt;Picker: Select local video
+    Picker--&gt;&gt;Replay: URI + duration
+    Replay-&gt;&gt;Replay: Reject missing duration or &gt;60 s
+    loop every 50 ms of video time
+        Replay-&gt;&gt;Thumb: Decode thumbnail at timestamp
+        Thumb--&gt;&gt;Replay: Local image URI
+        Replay-&gt;&gt;MP: Detect pose on image
+        alt pose detected
+            MP--&gt;&gt;Replay: Result bundle
+        else Android no-pose error
+            Replay-&gt;&gt;Replay: Convert to empty result
+        end
+        Replay-&gt;&gt;Pipe: Result + original timestamp + replay coordinator
+    end
+    Pipe--&gt;&gt;Replay: Counts, status, overlay, diagnostics
+    Replay--&gt;&gt;QA: Final replay result</code></pre>
+<p>The replay coordinate mapper uses <code>contain</code> geometry, including letterbox/pillarbox offsets, to align the skeleton with the video view. Frames are processed serially so asynchronous inference cannot reorder detector time. The code does not upload the clip. It also does not implement an explicit thumbnail-cache cleanup routine, so documentation should not claim secure deletion of decoder artifacts.</p>
+<h2 id="session-output-and-in-memory-data">Session output and in-memory data<a class="headerlink" href="#session-output-and-in-memory-data" title="Permanent link">&para;</a></h2>
+<p>When a session stops, <code>buildPoseSession</code> constructs an object with exercise ID, wall-clock duration, completion date, per-rep results, total/valid counts, average form score, and the three most frequent form errors. No mounted screen persists or transmits that object in this shell.</p>
+<p>Live landmarks, render points, detector state, holds, step measurements, and performance samples reside in memory. The optional counter trace is capped at 180 entries and coalesces samples closer than 100 ms. It contains derived movement and status values; it deliberately excludes camera frames and raw landmark arrays.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../architecture/" class="md-footer__link md-footer__link--prev" aria-label="Previous: System Architecture">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                System Architecture
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../engineering-history/" class="md-footer__link md-footer__link--next" aria-label="Next: Engineering Evolution">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Engineering Evolution
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Technical white paper — repository state reviewed 11 August 2026
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.footer", "navigation.indexes", "navigation.sections", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.tooltips"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
