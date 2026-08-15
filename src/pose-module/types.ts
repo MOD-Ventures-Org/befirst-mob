@@ -77,6 +77,8 @@ export type DisplayTier = 'TOO_CLOSE' | 'NO_BODY' | 'CORE' | 'FULL';
 // Coaching message state (spec §10).
 export type CoachState =
   | 'TOO_CLOSE'
+	| 'TOO_FAR'
+	| 'KNEES_NOT_VISIBLE'
   | 'NO_BODY'
   | 'NOT_IN_PLANK' // pre-start: waiting for the push-up position
 	| 'NOT_IN_SQUAT' // pre-start: lower body is not fully visible for squat tracking

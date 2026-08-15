@@ -41,6 +41,8 @@ const REQUIRED_JOINTS: (keyof Skeleton)[] = [
 	'rightAnkle',
 ];
 
+export type SquatFramingWarning = 'knees-not-visible' | 'too-close' | 'too-far' | null;
+
 export function hasTrackableSquatBody(visibility: JointVisibility, allowSingleSide = false): boolean {
 	if (!allowSingleSide) {
 		return REQUIRED_JOINTS.every(joint => conf(visibility, joint) >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN);
@@ -52,6 +54,25 @@ export function hasTrackableSquatBody(visibility: JointVisibility, allowSingleSi
 		conf(visibility, `${side}Knee`) >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN &&
 		conf(visibility, `${side}Ankle`) >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN;
 	return sideIsTrackable('left') || sideIsTrackable('right');
+}
+
+// The normalised camera coordinates retain the full [0, 1] frame regardless
+// of preview size. Using the longest body dimension keeps the warning valid if
+// a camera reports its sensor axes rotated; it is intentionally advisory and
+// never gates a repetition.
+export function squatFramingWarning(normalized: Skeleton, visibility: JointVisibility): SquatFramingWarning {
+	const kneesVisible =
+		conf(visibility, 'leftKnee') >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN &&
+		conf(visibility, 'rightKnee') >= SQUAT_PARAMS.JOINT_CONFIDENCE_MIN;
+	if (!kneesVisible) return 'knees-not-visible';
+	if (!hasTrackableSquatBody(visibility)) return null;
+	const xs = REQUIRED_JOINTS.map(joint => normalized[joint].x);
+	const ys = REQUIRED_JOINTS.map(joint => normalized[joint].y);
+	const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+
+	if (span >= SQUAT_PARAMS.MAX_BODY_FRAME_SPAN) return 'too-close';
+	if (span < SQUAT_PARAMS.MIN_BODY_FRAME_SPAN) return 'too-far';
+	return null;
 }
 
 export interface SquatMeasurementOptions {

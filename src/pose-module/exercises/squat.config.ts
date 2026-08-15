@@ -23,6 +23,9 @@ export const SQUAT_PARAMS = {
 	// a deep camera-projected bend; the 150° top still requires a clear return
 	// to standing before a repetition can count.
 	BOTTOM_KNEE_ANGLE: 140,
+	STANDARD_BOTTOM_KNEE_ANGLE_MIN: 110,
+	STANDARD_BOTTOM_KNEE_ANGLE_MAX: 145,
+	STANDARD_BOTTOM_KNEE_ANGLE_STEP: 5,
 	BOTTOM_EXIT_KNEE_ANGLE: 140,
 	// A kneeling or plank position can also produce a bent-knee → straight-knee
 	// sequence. Normal Squats must keep the ankles sufficiently below the
@@ -31,6 +34,11 @@ export const SQUAT_PARAMS = {
 	// from shoulders to ankles) while remaining tolerant of wide-angle phones
 	// and full-body standing squat framing.
 	MIN_UPRIGHT_ANKLE_SPAN_SW: 1.5,
+	// Framing warnings only: counting remains live while we guide the athlete to
+	// a clearer camera distance. Span uses normalized image coordinates, making
+	// it independent of device resolution and frame orientation.
+	MIN_BODY_FRAME_SPAN: 0.5,
+	MAX_BODY_FRAME_SPAN: 0.92,
 	// Keep the pulse-up band above the standard bottom threshold. If these
 	// overlapped, holding still at the shallow bottom could arm a false pulse.
 	PULSE_UP_MIN_KNEE_ANGLE: 145,

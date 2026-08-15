@@ -24,6 +24,11 @@ export interface SquatRepCounts {
 	pulse: number;
 }
 
+export interface SquatDetectorOptions {
+	// Standard Squat only. Smaller values require a deeper knee bend.
+	standardBottomKneeAngle?: number;
+}
+
 // Opt-in diagnostics are numeric, bounded by CounterTraceRecorder, and never
 // contain raw frames or camera imagery. They make real-device jump failures
 // explainable without collecting a workout video.
@@ -95,9 +100,15 @@ const EMPTY_COUNTS: SquatRepCounts = { standard: 0, jump: 0, pulse: 0 };
  * squat bottom -> sustained takeoff -> airborne -> sustained landing.
  */
 export class SquatDetector {
-	constructor(private mode: SquatMode = 'standard') {}
+	constructor(
+		private mode: SquatMode = 'standard',
+		options: SquatDetectorOptions = {},
+	) {
+		this.standardBottomKneeAngle = this.normalizeStandardBottomAngle(options.standardBottomKneeAngle);
+	}
 
 	private state: MovementState = 'INIT';
+	private standardBottomKneeAngle: number;
 	private counts: SquatRepCounts = { ...EMPTY_COUNTS };
 	private lastRepMs: number | null = null;
 	private bottomStartedAtMs = 0;
@@ -119,6 +130,18 @@ export class SquatDetector {
 	private nextHoldId = 1;
 	private status = 'Get your full body in frame';
 
+	// This is intentionally safe to call only between sets in the UI. If an
+	// integrating app changes the setting mid-repetition, discard that partial
+	// movement rather than combining two different depth targets into one rep.
+	setStandardBottomKneeAngle(angle: number): void {
+		if (this.mode !== 'standard') return;
+		this.standardBottomKneeAngle = this.normalizeStandardBottomAngle(angle);
+		this.state = 'INIT';
+		this.resetMotionSamples();
+		this.completeHold();
+		this.status = 'Get your full body in frame';
+	}
+
 	update(metrics: SquatMetrics, nowMs: number): SquatUpdate {
 		this.lastMetricsAtMs = nowMs;
 		// A kneeling/plank transition can create the same 2-D knee-angle pattern
@@ -136,9 +159,10 @@ export class SquatDetector {
 		}
 
 		const bottomKneeAngle =
-			this.mode === 'jump' ? SQUAT_PARAMS.JUMP_BOTTOM_KNEE_ANGLE : SQUAT_PARAMS.BOTTOM_KNEE_ANGLE;
+			this.mode === 'jump' ? SQUAT_PARAMS.JUMP_BOTTOM_KNEE_ANGLE : this.standardBottomKneeAngle;
 		const isBottom = metrics.kneeAngle <= bottomKneeAngle;
-		const remainsLow = metrics.kneeAngle <= SQUAT_PARAMS.BOTTOM_EXIT_KNEE_ANGLE;
+		const remainsLow =
+			metrics.kneeAngle <= (this.mode === 'jump' ? SQUAT_PARAMS.BOTTOM_EXIT_KNEE_ANGLE : this.standardBottomKneeAngle);
 		const atTop = metrics.kneeAngle >= SQUAT_PARAMS.TOP_KNEE_ANGLE;
 		if (!atTop) this.jumpTopReachedAtMs = null;
 		const jumpSignals = this.measureJumpSignals(metrics, nowMs);
@@ -176,8 +200,8 @@ export class SquatDetector {
 					this.state = 'TOP';
 				} else if (
 					this.mode === 'standard' &&
-					metrics.kneeAngle >= SQUAT_PARAMS.PULSE_UP_MIN_KNEE_ANGLE &&
-					metrics.kneeAngle <= SQUAT_PARAMS.PULSE_UP_MAX_KNEE_ANGLE &&
+					metrics.kneeAngle >= this.pulseUpMinKneeAngle() &&
+					metrics.kneeAngle <= this.pulseUpMaxKneeAngle() &&
 					nowMs - this.bottomStartedAtMs >= SQUAT_PARAMS.MIN_BOTTOM_TO_PULSE_MS
 				) {
 					this.state = 'PULSE_UP';
@@ -316,6 +340,21 @@ export class SquatDetector {
 		this.previousPelvisY = metrics.pelvisY;
 		this.previousAtMs = nowMs;
 		return speed;
+	}
+
+	private normalizeStandardBottomAngle(angle: number = SQUAT_PARAMS.BOTTOM_KNEE_ANGLE): number {
+		const { STANDARD_BOTTOM_KNEE_ANGLE_MIN: min, STANDARD_BOTTOM_KNEE_ANGLE_MAX: max, STANDARD_BOTTOM_KNEE_ANGLE_STEP: step } =
+			SQUAT_PARAMS;
+		const bounded = Math.max(min, Math.min(max, angle));
+		return min + Math.round((bounded - min) / step) * step;
+	}
+
+	private pulseUpMinKneeAngle(): number {
+		return Math.min(this.standardBottomKneeAngle + SQUAT_PARAMS.STANDARD_BOTTOM_KNEE_ANGLE_STEP, SQUAT_PARAMS.TOP_KNEE_ANGLE - 2);
+	}
+
+	private pulseUpMaxKneeAngle(): number {
+		return Math.min(this.pulseUpMinKneeAngle() + 3, SQUAT_PARAMS.TOP_KNEE_ANGLE - 2);
 	}
 
 	private enterBottom(nowMs: number): void {

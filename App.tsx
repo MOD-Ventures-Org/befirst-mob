@@ -4,6 +4,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 
 import { usePoseSession, usePyramidSession } from './src/pose-module';
 import { PUSHUP_PARAMS } from './src/pose-module/exercises/pushup.config';
+import { SQUAT_PARAMS } from './src/pose-module/exercises/squat.config';
 import {
 	BRAND_ORANGE,
 	buildPyramidRows,
@@ -28,6 +29,8 @@ const SHOW_JUMP_SQUATS = true;
 
 const coachCopy: Record<string, string> = {
 	TOO_CLOSE: 'Move back',
+	TOO_FAR: 'Move closer',
+	KNEES_NOT_VISIBLE: 'Move farther',
 	NO_BODY: 'Step into frame',
 	NOT_IN_PLANK: 'Get into push-up position',
 	NOT_IN_SQUAT: 'Keep your full body in frame',
@@ -298,6 +301,7 @@ interface WorkoutTrackerProps {
 }
 
 function WorkoutTracker({ exercise, onSelectExercise, onOpenVideoReplay }: WorkoutTrackerProps) {
+	const [standardSquatBottomAngle, setStandardSquatBottomAngle] = useState<number>(SQUAT_PARAMS.BOTTOM_KNEE_ANGLE);
 	const insets = useSafeAreaInsets();
 	const {
 		pose,
@@ -314,12 +318,20 @@ function WorkoutTracker({ exercise, onSelectExercise, onOpenVideoReplay }: Worko
 		requestPermission,
 		start,
 		stop,
-	} = usePoseSession({ exercise });
+	} = usePoseSession({ exercise, standardSquatBottomAngle });
 
 	const isSquat = exercise === 'squat';
 	const isJumpSquat = exercise === 'jump-squat';
 	const isSquatExercise = isSquat || isJumpSquat;
 	const isBandedSideStep = exercise === 'banded-side-step';
+	const decreaseSquatDepthAngle = () =>
+		setStandardSquatBottomAngle(angle =>
+			Math.max(SQUAT_PARAMS.STANDARD_BOTTOM_KNEE_ANGLE_MIN, angle - SQUAT_PARAMS.STANDARD_BOTTOM_KNEE_ANGLE_STEP),
+		);
+	const increaseSquatDepthAngle = () =>
+		setStandardSquatBottomAngle(angle =>
+			Math.min(SQUAT_PARAMS.STANDARD_BOTTOM_KNEE_ANGLE_MAX, angle + SQUAT_PARAMS.STANDARD_BOTTOM_KNEE_ANGLE_STEP),
+		);
 	const squatCurrentHold = squatTracking.activeHold;
 	const squatLastHold = squatTracking.holds[squatTracking.holds.length - 1];
 	const sideStepCurrentHold = sideStepTracking.activeHold;
@@ -427,6 +439,37 @@ function WorkoutTracker({ exercise, onSelectExercise, onOpenVideoReplay }: Worko
 					{initError ? <Text style={styles.error}>{initError}</Text> : null}
 				</View>
 				<View style={styles.controls}>
+					{isSquat && !isRunning ? (
+						<View accessibilityLabel="Normal squat bottom-angle setting" style={styles.squatDepthControl}>
+							<Text style={styles.squatDepthLabel}>Squat bottom angle</Text>
+							<View style={styles.squatDepthRow}>
+								<Pressable
+									accessibilityLabel="Require a deeper squat"
+									disabled={standardSquatBottomAngle <= SQUAT_PARAMS.STANDARD_BOTTOM_KNEE_ANGLE_MIN}
+									onPress={decreaseSquatDepthAngle}
+									style={[
+										styles.squatDepthButton,
+										standardSquatBottomAngle <= SQUAT_PARAMS.STANDARD_BOTTOM_KNEE_ANGLE_MIN && styles.squatDepthButtonDisabled,
+									]}
+								>
+									<Text style={styles.squatDepthButtonText}>−</Text>
+								</Pressable>
+								<Text style={styles.squatDepthValue}>{standardSquatBottomAngle}°</Text>
+								<Pressable
+									accessibilityLabel="Allow a shallower squat"
+									disabled={standardSquatBottomAngle >= SQUAT_PARAMS.STANDARD_BOTTOM_KNEE_ANGLE_MAX}
+									onPress={increaseSquatDepthAngle}
+									style={[
+										styles.squatDepthButton,
+										standardSquatBottomAngle >= SQUAT_PARAMS.STANDARD_BOTTOM_KNEE_ANGLE_MAX && styles.squatDepthButtonDisabled,
+									]}
+								>
+									<Text style={styles.squatDepthButtonText}>+</Text>
+								</Pressable>
+							</View>
+							<Text style={styles.squatDepthHint}>Lower angle = deeper squat</Text>
+						</View>
+					) : null}
 					<Pressable style={[styles.button, isRunning && styles.stopButton]} onPress={() => (isRunning ? stop() : start())}>
 						<Text style={styles.buttonText}>{isRunning ? 'Stop' : 'Start'}</Text>
 					</Pressable>
@@ -895,6 +938,56 @@ const styles = StyleSheet.create({
 		bottom: 36,
 		alignItems: 'flex-end',
 		gap: 8,
+	},
+	squatDepthControl: {
+		alignItems: 'center',
+		minWidth: 146,
+		padding: 10,
+		borderRadius: 10,
+		backgroundColor: 'rgba(0, 0, 0, 0.64)',
+	},
+	squatDepthLabel: {
+		color: '#d4d4d4',
+		fontSize: 11,
+		fontWeight: '700',
+		textTransform: 'uppercase',
+	},
+	squatDepthRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		justifyContent: 'center',
+		gap: 12,
+		marginTop: 5,
+	},
+	squatDepthButton: {
+		alignItems: 'center',
+		justifyContent: 'center',
+		width: 30,
+		height: 30,
+		borderRadius: 15,
+		backgroundColor: BRAND_ORANGE,
+	},
+	squatDepthButtonDisabled: {
+		opacity: 0.35,
+	},
+	squatDepthButtonText: {
+		color: '#fff',
+		fontSize: 22,
+		fontWeight: '700',
+		lineHeight: 25,
+	},
+	squatDepthValue: {
+		minWidth: 42,
+		color: '#fff',
+		fontSize: 22,
+		fontWeight: '900',
+		textAlign: 'center',
+	},
+	squatDepthHint: {
+		marginTop: 4,
+		color: '#9ea6b4',
+		fontSize: 10,
+		fontWeight: '600',
 	},
 	button: {
 		minWidth: 116,

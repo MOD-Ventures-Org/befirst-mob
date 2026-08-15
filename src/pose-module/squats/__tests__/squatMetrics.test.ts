@@ -1,4 +1,4 @@
-import { hasTrackableSquatBody, measureSquat } from '../squatMetrics';
+import { hasTrackableSquatBody, measureSquat, squatFramingWarning } from '../squatMetrics';
 import type { FootLandmarks, FootVisibility, JointVisibility, Skeleton, WorldSkeleton } from '../../types';
 
 const skeleton: Skeleton = {
@@ -86,6 +86,50 @@ describe('squat metrics', () => {
 
 	it('still rejects genuinely unreliable lower-body landmarks', () => {
 		expect(hasTrackableSquatBody(visibility(0.2))).toBe(false);
+	});
+
+	it('advises when a full squat body is too close or too far in the frame', () => {
+		const tooFar: Skeleton = {
+			...skeleton,
+			leftShoulder: { x: 0.45, y: 0.35 },
+			rightShoulder: { x: 0.55, y: 0.35 },
+			leftHip: { x: 0.46, y: 0.45 },
+			rightHip: { x: 0.54, y: 0.45 },
+			leftKnee: { x: 0.45, y: 0.55 },
+			rightKnee: { x: 0.55, y: 0.55 },
+			leftAnkle: { x: 0.45, y: 0.65 },
+			rightAnkle: { x: 0.55, y: 0.65 },
+		};
+		const tooClose: Skeleton = {
+			...skeleton,
+			leftShoulder: { x: 0.02, y: 0.02 },
+			rightShoulder: { x: 0.98, y: 0.02 },
+			leftHip: { x: 0.1, y: 0.3 },
+			rightHip: { x: 0.9, y: 0.3 },
+			leftKnee: { x: 0.12, y: 0.62 },
+			rightKnee: { x: 0.88, y: 0.62 },
+			leftAnkle: { x: 0.18, y: 0.98 },
+			rightAnkle: { x: 0.82, y: 0.98 },
+		};
+		const wellFramed: Skeleton = {
+			...tooFar,
+			leftShoulder: { x: 0.35, y: 0.15 },
+			rightShoulder: { x: 0.65, y: 0.15 },
+			leftHip: { x: 0.4, y: 0.35 },
+			rightHip: { x: 0.6, y: 0.35 },
+			leftKnee: { x: 0.38, y: 0.58 },
+			rightKnee: { x: 0.62, y: 0.58 },
+			leftAnkle: { x: 0.36, y: 0.78 },
+			rightAnkle: { x: 0.64, y: 0.78 },
+		};
+
+		expect(squatFramingWarning(tooFar, visibility(0.9))).toBe('too-far');
+		expect(squatFramingWarning(tooClose, visibility(0.9))).toBe('too-close');
+		expect(squatFramingWarning(wellFramed, visibility(0.9))).toBeNull();
+
+		const kneeHidden = visibility(0.9);
+		kneeHidden.rightKnee = 0.24;
+		expect(squatFramingWarning(wellFramed, kneeHidden)).toBe('knees-not-visible');
 	});
 
 	it('uses the lowest confidently tracked heel/toe point for each foot', () => {

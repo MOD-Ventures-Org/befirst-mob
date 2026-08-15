@@ -54,6 +54,17 @@ describe('SquatDetector', () => {
 		expect(update.rep).toEqual({ variant: 'standard', totalReps: 1 });
 	});
 
+	it('uses a configured normal-squat bottom angle instead of the 140-degree default', () => {
+		const detector = new SquatDetector('standard', { standardBottomKneeAngle: 125 });
+		detector.update(frame(152, 300), 0);
+		detector.update(frame(130, 390, 515), 300);
+		detector.update(frame(152, 300, 500), 600);
+		detector.update(frame(125, 410, 520), 900);
+		const update = detector.update(frame(152, 300, 500), 1_300);
+
+		expect(update.rep).toEqual({ variant: 'standard', totalReps: 1 });
+	});
+
 	it('does not count a partial descent that remains above the shallow bottom threshold', () => {
 		const detector = new SquatDetector('standard');
 		detector.update(frame(152, 300), 0);

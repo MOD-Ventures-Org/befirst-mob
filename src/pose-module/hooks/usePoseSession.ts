@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 
 import { PoseDetectionOnImage, type DetectionError, type PoseDetectionResultBundle, type ViewCoordinator } from 'react-native-mediapipe';
@@ -30,7 +30,7 @@ import {
 	type BandedSideStepUpdate,
 } from '../side-steps/BandedSideStepDetector';
 import { SquatDetector, type SquatTrackingState, type SquatUpdate } from '../squats/SquatDetector';
-import { measureSquat } from '../squats/squatMetrics';
+import { measureSquat, squatFramingWarning } from '../squats/squatMetrics';
 import { StateMachine } from '../state-machine/StateMachine';
 import { SubjectLock } from '../subjectLock';
 import type { CoachState, DebugInfo, FormViolation, PoseSession, RenderPose, RepResult } from '../types';
@@ -72,6 +72,8 @@ const FIVE_LINES_JOINTS = ['leftShoulder', 'rightShoulder', 'leftElbow', 'rightE
 export interface UsePoseSessionConfig {
 	exercise: string;
 	targetReps?: number;
+	// Normal Squat only. The UI locks this setting while a workout is running.
+	standardSquatBottomAngle?: number;
 	// Stores a short, in-memory trace of counter decisions for device testing.
 	// It defaults off and never writes camera or landmark data to disk.
 	debugTrace?: boolean;
@@ -136,7 +138,14 @@ function buildPoseSession(exercise: string, startedAt: number, reps: RepResult[]
  * StateMachine + FormChecker run in parallel for phase display and per-rep
  * form scores.
  */
-export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugTrace = false }: UsePoseSessionConfig) {
+export function usePoseSession({
+	exercise,
+	targetReps,
+	standardSquatBottomAngle = SQUAT_PARAMS.BOTTOM_KNEE_ANGLE,
+	onComplete,
+	onRep,
+	debugTrace = false,
+}: UsePoseSessionConfig) {
 	const isSquat = exercise === 'squat';
 	const isJumpSquat = exercise === 'jump-squat';
 	const isSquatExercise = isSquat || isJumpSquat;
@@ -147,7 +156,9 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 	const oneEuro = useRef(new SkeletonOneEuro());
 	const stabilizer = useRef(new PoseStabilizer());
 	const repDetector = useRef(new RepDetector());
-	const squatDetector = useRef(new SquatDetector(isJumpSquat ? 'jump' : 'standard'));
+	const squatDetector = useRef(
+		new SquatDetector(isJumpSquat ? 'jump' : 'standard', { standardBottomKneeAngle: standardSquatBottomAngle }),
+	);
 	const sideStepDetector = useRef(new BandedSideStepDetector());
 	const subjectLock = useRef(new SubjectLock());
 	const velocityTracker = useRef(new VelocityTracker(0.4));
@@ -215,6 +226,11 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 	onRepRef.current = onRep;
 	const targetRepsRef = useRef(targetReps);
 	targetRepsRef.current = targetReps;
+
+	useEffect(() => {
+		if (!isSquat || isRunningRef.current) return;
+		squatDetector.current.setStandardBottomKneeAngle(standardSquatBottomAngle);
+	}, [isSquat, standardSquatBottomAngle]);
 
 	// Coaching debounce state.
 	const coachRef = useRef<CoachState>('NO_BODY');
@@ -455,6 +471,15 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 						{ allowSingleSide: isJumpSquat, world: frame.world },
 					)
 				: null;
+			const squatFraming = isSquatExercise ? squatFramingWarning(frame.normalized, frame.visibility) : null;
+			const squatFramingMessage =
+				squatFraming === 'knees-not-visible'
+					? 'Move farther — keep both knees in frame'
+					: squatFraming === 'too-close'
+					? 'Move back — keep shoulders through feet in frame'
+					: squatFraming === 'too-far'
+						? 'Move closer — fill more of the frame'
+						: null;
 			if (squatMetrics) lastLowerBodyTrackedMs.current = now;
 
 			// --- Push-up signal: world-space arm extension first, 2-D fallback ---
@@ -494,7 +519,9 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 							? squatDetector.current.gap(now)
 							: squatDetector.current.pause(now);
 					publishSquatTracking(squatUpdate, now);
-					commitTrackingDetail(squatUpdate.status);
+					commitTrackingDetail(
+						squatUpdate.status === 'Stand upright for squats' ? squatUpdate.status : squatFramingMessage ?? squatUpdate.status,
+					);
 					counterTrace.current.record({
 						atMs: now,
 						exercise,
@@ -732,6 +759,12 @@ export function usePoseSession({ exercise, targetReps, onComplete, onRep, debugT
 						: 'NO_BODY';
 			} else if (tier === 'NO_BODY') {
 				coach = isRunningRef.current ? 'STAND_FACING_CAMERA' : 'NO_BODY';
+			} else if (isSquatExercise && squatFraming === 'knees-not-visible') {
+				coach = 'KNEES_NOT_VISIBLE';
+			} else if (isSquatExercise && squatFraming === 'too-close') {
+				coach = 'TOO_CLOSE';
+			} else if (isSquatExercise && squatFraming === 'too-far') {
+				coach = 'TOO_FAR';
 			} else if (!isRunningRef.current) {
 				coach = isSquatExercise
 					? squatMetrics
