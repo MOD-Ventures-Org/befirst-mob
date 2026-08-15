@@ -45,13 +45,23 @@ describe('SquatDetector', () => {
 		expect(update.repCounts).toEqual({ standard: 1, jump: 0, pulse: 0 });
 	});
 
-	it('credits a controlled phone-facing squat without requiring a deep 2-D knee bend', () => {
+	it('credits a shallow phone-facing squat after a top-bottom-top movement', () => {
 		const detector = new SquatDetector('standard');
 		detector.update(frame(152, 300), 0);
-		detector.update(frame(130, 400, 520), 500);
+		detector.update(frame(140, 400, 520), 500);
 		const update = detector.update(frame(152, 300, 500), 1_100);
 
 		expect(update.rep).toEqual({ variant: 'standard', totalReps: 1 });
+	});
+
+	it('does not count a partial descent that remains above the shallow bottom threshold', () => {
+		const detector = new SquatDetector('standard');
+		detector.update(frame(152, 300), 0);
+		detector.update(frame(141, 390, 515), 500);
+		const update = detector.update(frame(152, 300, 500), 1_100);
+
+		expect(update.rep).toBeUndefined();
+		expect(update.repCounts.standard).toBe(0);
 	});
 
 	it('does not count a normal squat in Jump Squats mode', () => {
@@ -289,7 +299,7 @@ describe('SquatDetector', () => {
 		const detector = new SquatDetector();
 		detector.update(frame(170, 300), 0);
 		detector.update(frame(105, 420, 520), 500);
-		detector.update(frame(140, 385, 515), 800);
+		detector.update(frame(145, 385, 515), 800);
 		const update = detector.update(frame(105, 420, 520), 1_100);
 
 		expect(update.rep).toEqual({ variant: 'pulse', totalReps: 1 });

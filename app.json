@@ -7,14 +7,21 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "scheme": "befirstpose",
+    "icon": "./assets/app-icon.png",
     "ios": {
       "bundleIdentifier": "com.mod.befirstpose",
       "infoPlist": {
-        "NSCameraUsageDescription": "Allow $(PRODUCT_NAME) to access your camera for live pose tracking."
+        "NSCameraUsageDescription": "Allow $(PRODUCT_NAME) to access your camera for live pose tracking.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.mod.befirstpose",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon-foreground.png",
+        "backgroundImage": "./assets/adaptive-icon-background.png",
+        "monochromeImage": "./assets/adaptive-icon-monochrome.png"
+      },
       "permissions": [
         "android.permission.CAMERA"
       ]

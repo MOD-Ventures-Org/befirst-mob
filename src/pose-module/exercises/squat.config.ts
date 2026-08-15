@@ -18,9 +18,15 @@ export const SQUAT_PARAMS = {
 	// briefly jitters upward. Near the regular top threshold we give the jump
 	// detector its two-frame confirmation window first.
 	JUMP_CLEAR_TOP_KNEE_ANGLE: 160,
-	BOTTOM_KNEE_ANGLE: 130,
+	// Standard Squats use a shallow-but-distinct bottom. A 140° threshold
+	// supports controlled phone-facing squats without requiring users to reach
+	// a deep camera-projected bend; the 150° top still requires a clear return
+	// to standing before a repetition can count.
+	BOTTOM_KNEE_ANGLE: 140,
 	BOTTOM_EXIT_KNEE_ANGLE: 140,
-	PULSE_UP_MIN_KNEE_ANGLE: 140,
+	// Keep the pulse-up band above the standard bottom threshold. If these
+	// overlapped, holding still at the shallow bottom could arm a false pulse.
+	PULSE_UP_MIN_KNEE_ANGLE: 145,
 	PULSE_UP_MAX_KNEE_ANGLE: 148,
 	// Jump Squats are evaluated in milliseconds, not frame counts: processed
 	// camera FPS varies considerably across phones and can dip during take-off.
