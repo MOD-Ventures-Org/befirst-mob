@@ -24,6 +24,13 @@ export const SQUAT_PARAMS = {
 	// to standing before a repetition can count.
 	BOTTOM_KNEE_ANGLE: 140,
 	BOTTOM_EXIT_KNEE_ANGLE: 140,
+	// A kneeling or plank position can also produce a bent-knee → straight-knee
+	// sequence. Normal Squats must keep the ankles sufficiently below the
+	// shoulders in the portrait camera plane before that sequence can count.
+	// 1.5 distinguishes the close, kneeling push-up framing (about 1–1.3 SW
+	// from shoulders to ankles) while remaining tolerant of wide-angle phones
+	// and full-body standing squat framing.
+	MIN_UPRIGHT_ANKLE_SPAN_SW: 1.5,
 	// Keep the pulse-up band above the standard bottom threshold. If these
 	// overlapped, holding still at the shallow bottom could arm a false pulse.
 	PULSE_UP_MIN_KNEE_ANGLE: 145,

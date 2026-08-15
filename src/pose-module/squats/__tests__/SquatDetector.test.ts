@@ -64,6 +64,17 @@ describe('SquatDetector', () => {
 		expect(update.repCounts.standard).toBe(0);
 	});
 
+	it('does not arm or count a kneeling or plank-like movement as a normal squat', () => {
+		const detector = new SquatDetector('standard');
+		detector.update({ ...frame(140, 420, 520), isUpright: false }, 0);
+		detector.update({ ...frame(152, 300, 500), isUpright: false }, 500);
+		const update = detector.update(frame(152, 300, 500), 1_100);
+
+		expect(update.rep).toBeUndefined();
+		expect(update.repCounts.standard).toBe(0);
+		expect(update.status).toBe('Lower into your squat');
+	});
+
 	it('does not count a normal squat in Jump Squats mode', () => {
 		const detector = new SquatDetector('jump');
 		calibrateJumpDetector(detector);

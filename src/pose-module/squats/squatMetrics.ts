@@ -13,6 +13,10 @@ export interface SquatMetrics {
 	rightAnkleX: number;
 	shoulderWidth: number;
 	torsoLean: number;
+	// Normal Squats require an upright, standing-scale lower body. This rejects
+	// kneeling/plank poses whose knee bend can otherwise resemble a squat.
+	isUpright?: boolean;
+	verticalAnkleSpanSW?: number;
 	// Lowest confidently visible point on each foot. These fall back to the
 	// ankle on frames from older bridges/tests, but use heel/toe landmarks on
 	// current MediaPipe frames so a single jittery ankle cannot decide a jump.
@@ -145,6 +149,8 @@ export function measureSquat(
 			conf(visibility, `${side}Ankle`),
 		);
 	const torsoLean = Math.abs((Math.atan2(shoulderMid.x - hipMid.x, hipMid.y - shoulderMid.y) * 180) / Math.PI);
+	const verticalAnkleSpanSW =
+		((skeleton.leftAnkle.y + skeleton.rightAnkle.y) / 2 - shoulderMid.y) / width;
 
 	return {
 		kneeAngle: kneeAngles.reduce((total, angle) => total + angle, 0) / kneeAngles.length,
@@ -157,6 +163,11 @@ export function measureSquat(
 		rightAnkleX: skeleton.rightAnkle.x,
 		shoulderWidth: width,
 		torsoLean,
+		verticalAnkleSpanSW,
+		// Jump Squats deliberately support a side view, where projected vertical
+		// body span is not a reliable standing test. The normal-squat detector
+		// applies this gate; jump mode ignores it.
+		isUpright: verticalAnkleSpanSW >= SQUAT_PARAMS.MIN_UPRIGHT_ANKLE_SPAN_SW,
 		leftFootY: leftFoot.y,
 		rightFootY: rightFoot.y,
 		leftFootConfidence: Math.min(leftFoot.confidence, legConfidence('left')),

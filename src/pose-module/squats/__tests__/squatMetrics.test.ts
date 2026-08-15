@@ -44,7 +44,44 @@ describe('squat metrics', () => {
 		const moderateConfidence = visibility(0.3);
 
 		expect(hasTrackableSquatBody(moderateConfidence)).toBe(true);
-		expect(measureSquat(skeleton, moderateConfidence)).toMatchObject({ kneeAngle: expect.any(Number) });
+		expect(measureSquat(skeleton, moderateConfidence)).toMatchObject({
+			kneeAngle: expect.any(Number),
+			isUpright: true,
+		});
+	});
+
+	it('marks a kneeling or plank-like full body as not upright for normal squats', () => {
+		const plankLike: Skeleton = {
+			...skeleton,
+			leftShoulder: { x: 20, y: 100 },
+			rightShoulder: { x: 80, y: 100 },
+			leftHip: { x: 28, y: 135 },
+			rightHip: { x: 72, y: 135 },
+			leftKnee: { x: 20, y: 160 },
+			rightKnee: { x: 80, y: 160 },
+			leftAnkle: { x: 18, y: 175 },
+			rightAnkle: { x: 82, y: 175 },
+		};
+
+		expect(measureSquat(plankLike, visibility(0.9))).toMatchObject({
+			isUpright: false,
+			verticalAnkleSpanSW: expect.any(Number),
+		});
+	});
+
+	it('accepts an upright lower-body span above the push-up rejection boundary', () => {
+		const uprightButWideAngle: Skeleton = {
+			...skeleton,
+			leftShoulder: { x: 20, y: 100 },
+			rightShoulder: { x: 80, y: 100 },
+			leftAnkle: { x: 18, y: 191 },
+			rightAnkle: { x: 82, y: 191 },
+		};
+
+		expect(measureSquat(uprightButWideAngle, visibility(0.9))).toMatchObject({
+			isUpright: true,
+			verticalAnkleSpanSW: expect.any(Number),
+		});
 	});
 
 	it('still rejects genuinely unreliable lower-body landmarks', () => {

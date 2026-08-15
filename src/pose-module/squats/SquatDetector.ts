@@ -121,6 +121,13 @@ export class SquatDetector {
 
 	update(metrics: SquatMetrics, nowMs: number): SquatUpdate {
 		this.lastMetricsAtMs = nowMs;
+		// A kneeling/plank transition can create the same 2-D knee-angle pattern
+		// as a squat (bent knees followed by straight knees). Do not let it arm or
+		// finish a normal squat; preserve previously counted repetitions but reset
+		// the partial movement immediately.
+		if (this.mode === 'standard' && metrics.isUpright === false) {
+			return this.pause(nowMs, 'Stand upright for squats');
+		}
 		const pelvisSpeed = this.pelvisSpeed(metrics, nowMs);
 		const maxTorsoLean =
 			this.mode === 'jump' ? SQUAT_PARAMS.JUMP_MAX_TORSO_LEAN_DEG : SQUAT_PARAMS.MAX_TORSO_LEAN_DEG;
