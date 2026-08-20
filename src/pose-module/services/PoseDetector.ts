@@ -67,6 +67,50 @@ export function createReplayViewCoordinator(displayWidth: number, displayHeight:
 }
 
 /**
+ * Convert rendered joints back to coordinates normalized to the visible camera
+ * view. The live preview uses `cover`, so raw sensor coordinates can remain in
+ * [0, 1] after the same joint has already crossed a cropped preview edge.
+ */
+export function normalizeSkeletonToVisibleView(
+	skeleton: Skeleton,
+	results: PoseDetectionResultBundle,
+	vc: ViewCoordinator,
+): Skeleton | null {
+	const frameDims = vc.getFrameDims(results);
+	const corners = [
+		vc.convertPoint(frameDims, { x: 0, y: 0 }),
+		vc.convertPoint(frameDims, { x: 1, y: 0 }),
+		vc.convertPoint(frameDims, { x: 0, y: 1 }),
+		vc.convertPoint(frameDims, { x: 1, y: 1 }),
+	];
+	const xs = corners.map(point => point.x);
+	const ys = corners.map(point => point.y);
+	// Both supported resize modes center the rendered frame. For cover this is
+	// min<0 and max>viewport; for contain it is min>0 and max<viewport.
+	// In either case min+max is the viewport extent, while max-min is the
+	// rendered image extent and is wrong whenever the image is cropped/padded.
+	const viewWidth = Math.min(...xs) + Math.max(...xs);
+	const viewHeight = Math.min(...ys) + Math.max(...ys);
+	if (
+		!Number.isFinite(viewWidth) ||
+		!Number.isFinite(viewHeight) ||
+		viewWidth <= 0 ||
+		viewHeight <= 0
+	) {
+		return null;
+	}
+
+	const normalized = {} as Skeleton;
+	for (const joint of Object.keys(CORE_JOINT_LANDMARK_INDEX) as (keyof Skeleton)[]) {
+		normalized[joint] = {
+			x: skeleton[joint].x / viewWidth,
+			y: skeleton[joint].y / viewHeight,
+		};
+	}
+	return normalized;
+}
+
+/**
  * Map MediaPipe landmarks to on-screen pixels.
  *
  * The library's `ViewCoordinator.convertPoint` is the source of truth for the

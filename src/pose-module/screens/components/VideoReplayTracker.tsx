@@ -117,8 +117,9 @@ function ReplayRun({ asset, exercise, onChooseAnother, onClose }: ReplayRunProps
 		() => () => {
 			replayToken.current += 1;
 			player.pause();
+			stop(lastProcessedMs.current);
 		},
-		[player],
+		[player, stop],
 	);
 
 	const onLayout = useCallback((event: LayoutChangeEvent) => {
@@ -147,7 +148,7 @@ function ReplayRun({ asset, exercise, onChooseAnother, onClose }: ReplayRunProps
 		setStatus('running');
 		player.pause();
 		player.currentTime = 0;
-		start();
+		const sessionGeneration = start();
 
 		try {
 			for (let timestampMs = 0; timestampMs < durationMs; timestampMs += REPLAY_SAMPLE_INTERVAL_MS) {
@@ -160,6 +161,7 @@ function ReplayRun({ asset, exercise, onChooseAnother, onClose }: ReplayRunProps
 					timestampMs,
 					displayWidth: viewport.width,
 					displayHeight: viewport.height,
+					sessionGeneration,
 				});
 				if (replayToken.current !== token) return;
 				lastProcessedMs.current = timestampMs;

@@ -1,0 +1,16 @@
+diff --git a/android/src/main/java/expo/modules/videothumbnails/VideoThumbnailsModule.kt b/android/src/main/java/expo/modules/videothumbnails/VideoThumbnailsModule.kt
+index f507696..f636262 100644
+--- a/android/src/main/java/expo/modules/videothumbnails/VideoThumbnailsModule.kt
++++ b/android/src/main/java/expo/modules/videothumbnails/VideoThumbnailsModule.kt
+@@ -94,7 +94,10 @@ class VideoThumbnailsModule : Module() {
+ 
+           return retriever.getFrameAtTime(
+             videoOptions.time.toLong() * 1000,
+-            MediaMetadataRetriever.OPTION_CLOSEST_SYNC
++            // Replay analysis needs the frame closest to the requested sample,
++            // not the closest keyframe. Repeating one sync frame at several
++            // logical timestamps can manufacture stable exercise evidence.
++            MediaMetadataRetriever.OPTION_CLOSEST
+           )
+         } catch (e: Exception) {
+           Log.e(ERROR_TAG, "Unable to retrieve source file")

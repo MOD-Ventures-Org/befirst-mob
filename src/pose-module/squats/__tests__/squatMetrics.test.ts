@@ -1,4 +1,5 @@
-import { hasTrackableSquatBody, measureSquat, squatFramingWarning } from '../squatMetrics';
+import { hasTrackableSquatBody, isSquatBodyInFrame, measureSquat, squatFramingWarning } from '../squatMetrics';
+import { SQUAT_PARAMS } from '../../exercises/squat.config';
 import type { FootLandmarks, FootVisibility, JointVisibility, Skeleton, WorldSkeleton } from '../../types';
 
 const skeleton: Skeleton = {
@@ -88,6 +89,72 @@ describe('squat metrics', () => {
 		expect(hasTrackableSquatBody(visibility(0.2))).toBe(false);
 	});
 
+	it('supports a stricter confidence contract for standard Squats', () => {
+		const borderline = visibility(SQUAT_PARAMS.STANDARD_JOINT_CONFIDENCE_MIN - 0.01);
+
+		expect(hasTrackableSquatBody(borderline)).toBe(true);
+		expect(
+			hasTrackableSquatBody(borderline, false, SQUAT_PARAMS.STANDARD_JOINT_CONFIDENCE_MIN),
+		).toBe(false);
+		expect(
+			measureSquat(skeleton, borderline, undefined, {
+				minimumConfidence: SQUAT_PARAMS.STANDARD_JOINT_CONFIDENCE_MIN,
+			}),
+		).toBeNull();
+	});
+
+	it('requires two independently finite knee angles outside single-side mode', () => {
+		const degenerateLeftKnee: Skeleton = {
+			...skeleton,
+			leftKnee: { ...skeleton.leftHip },
+		};
+
+		expect(measureSquat(degenerateLeftKnee, visibility(0.9))).toBeNull();
+		expect(
+			measureSquat(degenerateLeftKnee, visibility(0.9), undefined, { allowSingleSide: true }),
+		).toMatchObject({
+			kneeAngle: expect.any(Number),
+			rightKneeAngle: expect.any(Number),
+		});
+	});
+
+	it('rejects confident squat landmarks that cross outside the camera image', () => {
+		const normalized: Skeleton = {
+			...skeleton,
+			leftShoulder: { x: 0.4, y: 0.15 },
+			rightShoulder: { x: 0.6, y: 0.15 },
+			leftHip: { x: 0.43, y: 0.4 },
+			rightHip: { x: 0.57, y: 0.4 },
+			leftKnee: { x: 0.42, y: 0.65 },
+			rightKnee: { x: 0.58, y: 0.65 },
+			leftAnkle: { x: 0.41, y: 0.9 },
+			rightAnkle: { x: 0.59, y: 0.9 },
+		};
+		const outside = { ...normalized, rightAnkle: { x: 0.59, y: 1.02 } };
+		const nearEdge = { ...normalized, leftShoulder: { x: 0.05, y: 0.15 } };
+		const weak = visibility(0.9);
+		weak.rightKnee = SQUAT_PARAMS.STANDARD_JOINT_CONFIDENCE_MIN - 0.01;
+
+		expect(
+			isSquatBodyInFrame(
+				normalized,
+				visibility(0.9),
+				false,
+				SQUAT_PARAMS.STANDARD_JOINT_CONFIDENCE_MIN,
+			),
+		).toBe(true);
+		expect(isSquatBodyInFrame(outside, visibility(0.9))).toBe(false);
+		expect(isSquatBodyInFrame(nearEdge, visibility(0.9))).toBe(false);
+		expect(
+			isSquatBodyInFrame(
+				normalized,
+				weak,
+				false,
+				SQUAT_PARAMS.STANDARD_JOINT_CONFIDENCE_MIN,
+			),
+		).toBe(false);
+	});
+
 	it('advises when a full squat body is too close or too far in the frame', () => {
 		const tooFar: Skeleton = {
 			...skeleton,
@@ -136,6 +203,12 @@ describe('squat metrics', () => {
 		const metrics = measureSquat(skeleton, visibility(0.9), { skeleton: feet, visibility: footVisibility });
 
 		expect(metrics).toMatchObject({
+			pelvisX: 50,
+			pelvisY: 135,
+			leftHipY: 135,
+			rightHipY: 135,
+			leftFootX: 20,
+			rightFootX: 80,
 			leftFootY: 296,
 			rightFootY: 294,
 			leftFootConfidence: 0.9,
@@ -174,7 +247,7 @@ describe('squat metrics', () => {
 			shoulderWidth: expect.any(Number),
 			leftFootConfidence: 0.9,
 			rightFootConfidence: 0.1,
-			});
+		});
 	});
 
 	it('exposes MediaPipe world shoulder width as an optional metric scale', () => {

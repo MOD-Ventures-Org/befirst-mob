@@ -6,6 +6,10 @@ export const SQUAT_PARAMS = {
 	// moderately confident joints and preserve detector state through a brief
 	// occlusion rather than repeatedly resetting a real rep.
 	JOINT_CONFIDENCE_MIN: 0.25,
+	// Standard Squats trade a short tracking reset for trustworthy bilateral
+	// evidence. Jump Squats retain the lower shared threshold because takeoff can
+	// briefly occlude one leg and has its own multi-signal verification.
+	STANDARD_JOINT_CONFIDENCE_MIN: 0.5,
 	TRACKING_GAP_MS: 800,
 	// Phone-facing landmarks flatten knee angles compared with a side view. The
 	// original deep-only thresholds left ordinary, controlled squats uncounted.
@@ -27,6 +31,42 @@ export const SQUAT_PARAMS = {
 	STANDARD_BOTTOM_KNEE_ANGLE_MAX: 145,
 	STANDARD_BOTTOM_KNEE_ANGLE_STEP: 5,
 	BOTTOM_EXIT_KNEE_ANGLE: 140,
+	// A normal squat must be a bilateral, grounded movement. Requiring both
+	// knees prevents a standing knee raise from turning the averaged knee angle
+	// into a fake squat, while the pelvis/foot checks reject walking, stepping,
+	// and landmark slides as the athlete leaves the frame.
+	STANDARD_PHASE_CONFIRM_MS: 120,
+	STANDARD_PHASE_CONFIRM_MIN_SAMPLES: 3,
+	STANDARD_PHASE_MAX_GAP_MS: 180,
+	STANDARD_PULSE_CONFIRM_MS: 70,
+	STANDARD_PULSE_CONFIRM_MIN_SAMPLES: 2,
+	STANDARD_MIN_PULSE_KNEE_EXCURSION_DEG: 8,
+	STANDARD_MIN_PULSE_COMPRESSION_RELEASE_SW: 0.06,
+	STANDARD_MAX_PULSE_EXCURSION_ASYMMETRY_DEG: 10,
+	// A standard repetition must be one continuous, ordered movement. These
+	// limits reject a bottom pose that survives a silent native tracking gap and
+	// prevent two sparse landmark samples from satisfying a time-only phase gate.
+	STANDARD_MAX_SAMPLE_GAP_MS: 300,
+	STANDARD_CALIBRATION_MS: 300,
+	STANDARD_CALIBRATION_MIN_SAMPLES: 4,
+	STANDARD_MIN_CYCLE_MS: 600,
+	STANDARD_MAX_CYCLE_MS: 8_000,
+	STANDARD_MIN_PELVIS_DROP_SW: 0.2,
+	STANDARD_MAX_FOOT_TRAVEL_SW: 0.12,
+	STANDARD_MAX_STANCE_CHANGE_SW: 0.25,
+	STANDARD_MAX_KNEE_DIFFERENCE_DEG: 30,
+	// Baseline continuity and translation-invariant depth checks. A real Squat
+	// compresses both hip-to-foot heights while the athlete remains in roughly
+	// the same camera position and scale, then restores that height at the top.
+	STANDARD_MAX_BODY_CENTER_SHIFT_SW: 0.35,
+	STANDARD_MAX_SCALE_CHANGE_RATIO: 0.2,
+	STANDARD_MIN_HIP_FOOT_COMPRESSION_SW: 0.18,
+	STANDARD_MAX_HIP_FOOT_ASYMMETRY_SW: 0.12,
+	STANDARD_TOP_RECOVERY_TOLERANCE_SW: 0.1,
+	// Landmarks exactly on an image edge are commonly only a partial body. Keep
+	// a small normalized margin so a rep cannot be armed while a foot or hip is
+	// already crossing out of the camera image.
+	BODY_FRAME_EDGE_MARGIN: 0.06,
 	// A kneeling or plank position can also produce a bent-knee → straight-knee
 	// sequence. Normal Squats must keep the ankles sufficiently below the
 	// shoulders in the portrait camera plane before that sequence can count.
@@ -39,8 +79,8 @@ export const SQUAT_PARAMS = {
 	// it independent of device resolution and frame orientation.
 	MIN_BODY_FRAME_SPAN: 0.5,
 	MAX_BODY_FRAME_SPAN: 0.92,
-	// Keep the pulse-up band above the standard bottom threshold. If these
-	// overlapped, holding still at the shallow bottom could arm a false pulse.
+	// Legacy UI labels retained for coaching/tests. Detection itself is relative
+	// to the person's confirmed bottom, not an exact absolute-angle dwell.
 	PULSE_UP_MIN_KNEE_ANGLE: 145,
 	PULSE_UP_MAX_KNEE_ANGLE: 148,
 	// Jump Squats are evaluated in milliseconds, not frame counts: processed

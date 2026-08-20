@@ -72,7 +72,7 @@ index 2641054b32d5add47193dd09720c9a8fe09a003b..708931bb02b0f11b078746520a6c4e0d
    }
  
    // Run face pose landmark using MediaPipe pose Landmarker API
-@@ -279,21 +292,26 @@ class PoseDetectorHelper(
+@@ -279,21 +292,25 @@ class PoseDetectorHelper(
  
    // Return the landmark result to this PoseDetectorHelper's caller
    private fun returnLivestreamResult(result: PoseLandmarkerResult, input: MPImage) {
@@ -87,16 +87,15 @@ index 2641054b32d5add47193dd09720c9a8fe09a003b..708931bb02b0f11b078746520a6c4e0d
 -      poseDetectorListener?.onEmpty()
 -    }
 +		try {
-+			if (result.landmarks().size > 0) {
-+				val finishTimeMs = SystemClock.uptimeMillis()
-+				val inferenceTime = finishTimeMs - result.timestampMs()
++			val finishTimeMs = SystemClock.uptimeMillis()
++			val inferenceTime = finishTimeMs - result.timestampMs()
 +
-+				poseDetectorListener?.onResults(
-+						ResultBundle(listOf(result), inferenceTime, input.height, input.width)
-+				)
-+			} else {
-+				poseDetectorListener?.onEmpty()
-+			}
++			// Empty landmark results are real camera observations, not errors. Send
++			// them through the normal result event so JS can cancel an armed rep as
++			// soon as the athlete leaves the frame.
++			poseDetectorListener?.onResults(
++					ResultBundle(listOf(result), inferenceTime, input.height, input.width)
++			)
 +		} finally {
 +			inferenceInFlight.set(false)
 +		}

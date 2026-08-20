@@ -21,7 +21,7 @@ import { RepDetector } from '../repDetector';
 import { computeAngles } from '../services/AngleCalculator';
 import { POSE_DETECTION_OPTIONS, POSE_MODEL_FILE, POSE_MODEL_NAME, useCameraService } from '../services/CameraService';
 import { FormChecker } from '../services/FormChecker';
-import { createReplayViewCoordinator, toSkeleton } from '../services/PoseDetector';
+import { createReplayViewCoordinator, normalizeSkeletonToVisibleView, toSkeleton } from '../services/PoseDetector';
 import { VelocityTracker } from '../services/VelocityTracker';
 import { buildRenderPose } from '../skeleton';
 import {
@@ -30,7 +30,7 @@ import {
 	type BandedSideStepUpdate,
 } from '../side-steps/BandedSideStepDetector';
 import { SquatDetector, type SquatTrackingState, type SquatUpdate } from '../squats/SquatDetector';
-import { measureSquat, squatFramingWarning } from '../squats/squatMetrics';
+import { isSquatBodyInFrame, measureSquat, squatFramingWarning } from '../squats/squatMetrics';
 import { StateMachine } from '../state-machine/StateMachine';
 import { SubjectLock } from '../subjectLock';
 import type { CoachState, DebugInfo, FormViolation, PoseSession, RenderPose, RepResult } from '../types';
@@ -92,6 +92,9 @@ export interface ReplayImageFrame {
 	timestampMs: number;
 	displayWidth: number;
 	displayHeight: number;
+	// Generation returned by start(). Async IMAGE inference must still belong to
+	// this session when it resolves; otherwise its result is discarded.
+	sessionGeneration?: number;
 }
 
 function buildPoseSession(exercise: string, startedAt: number, reps: RepResult[]): PoseSession {
@@ -167,6 +170,7 @@ export function usePoseSession({
 	const repHistory = useRef<RepResult[]>([]);
 	const sessionStartedAt = useRef(0);
 	const missingFrames = useRef(0);
+	const sessionGenerationRef = useRef(0);
 
 	// Per-frame perf sampling stays in refs; avg/p95 are computed only on the
 	// debug throttle tick.
@@ -323,6 +327,9 @@ export function usePoseSession({
 
 	const stop = useCallback((finishedAtMs = Date.now()) => {
 		if (!isRunningRef.current) return;
+		// Invalidate IMAGE-mode work before publishing the finished session. A
+		// cancelled replay may still have native inference in flight.
+		sessionGenerationRef.current += 1;
 		if (isSquatExercise) {
 			const now = finishedAtMs;
 			publishSquatTracking(squatDetector.current.finish(now), now);
@@ -346,14 +353,23 @@ export function usePoseSession({
 	}, []);
 
 	const start = useCallback(() => {
+		const sessionGeneration = sessionGenerationRef.current + 1;
+		sessionGenerationRef.current = sessionGeneration;
 		oneEuro.current.reset();
 		stabilizer.current.reset();
 		stateMachine.current.resetSession();
 		velocityTracker.current.reset();
 		repDetector.current.reset();
-		squatDetector.current.reset();
+		// Construct from the current module implementation for every workout. React
+		// Native Fast Refresh can preserve a useRef instance whose prototype came
+		// from an older detector module, making a real fix look unchanged until a
+		// full remount.
+		squatDetector.current = new SquatDetector(isJumpSquat ? 'jump' : 'standard', {
+			standardBottomKneeAngle: standardSquatBottomAngle,
+		});
 		sideStepDetector.current.reset();
 		subjectLock.current.reset();
+		missingFrames.current = 0;
 		// No readiness gate — the session is live immediately; GO shows briefly.
 		armedAtMs.current = Date.now();
 		lastLinesOkMs.current = 0;
@@ -372,7 +388,8 @@ export function usePoseSession({
 		commitTrackingDetail('');
 		isRunningRef.current = true;
 		setIsRunning(true);
-	}, [commitTrackingDetail, resetDepthState]);
+		return sessionGeneration;
+	}, [commitTrackingDetail, isJumpSquat, resetDepthState, standardSquatBottomAngle]);
 
 	const onResults = useCallback(
 		(results: PoseDetectionResultBundle, vc: ViewCoordinator, timestampMs?: number) => {
@@ -413,6 +430,14 @@ export function usePoseSession({
 				// The stabilizer owns disappearance: hold-last-known, then fade. A
 				// hard reset here was the old "skeleton blinks off" path.
 				pose.value = stabilizer.current.update({ tier: 'NO_BODY', pts: [] }, false, now);
+				// Lower-body counters must see the very first missing frame. In normal
+				// squat mode gap() cancels a partial rep immediately, preventing a
+				// bottom-before-loss + standing-after-return sequence from counting.
+				if (isRunningRef.current && isSquatExercise) {
+					publishSquatTracking(squatDetector.current.gap(now), now);
+				} else if (isRunningRef.current && isBandedSideStep) {
+					publishSideStepTracking(sideStepDetector.current.gap(now), now);
+				}
 				if (missingFrames.current > MAX_MISSING_FRAMES) {
 					oneEuro.current.reset();
 					velocityTracker.current.reset();
@@ -463,17 +488,34 @@ export function usePoseSession({
 			// Rendering uses the One Euro-filtered skeleton. Exercise metrics must
 			// use raw landmarks: visual smoothing otherwise delays and flattens the
 			// exact high-velocity portion of a jump or side step.
-			const squatMetrics = isLowerBodyExercise
+			const squatMinimumConfidence = isJumpSquat
+				? SQUAT_PARAMS.JOINT_CONFIDENCE_MIN
+				: SQUAT_PARAMS.STANDARD_JOINT_CONFIDENCE_MIN;
+			const viewNormalized = isLowerBodyExercise
+				? normalizeSkeletonToVisibleView(frame.skeleton, results, vc)
+				: null;
+			const squatBodyInFrame =
+				isLowerBodyExercise &&
+				viewNormalized !== null &&
+				isSquatBodyInFrame(frame.normalized, frame.visibility, isJumpSquat, squatMinimumConfidence) &&
+				isSquatBodyInFrame(viewNormalized, frame.visibility, isJumpSquat, squatMinimumConfidence);
+			const squatMetrics = isLowerBodyExercise && squatBodyInFrame
 				? measureSquat(
 						frame.skeleton,
 						frame.visibility,
 						frame.feet ? { skeleton: frame.feet.skeleton, visibility: frame.feet.visibility } : undefined,
-						{ allowSingleSide: isJumpSquat, world: frame.world },
+						{
+							allowSingleSide: isJumpSquat,
+							minimumConfidence: squatMinimumConfidence,
+							world: frame.world,
+						},
 					)
 				: null;
 			const squatFraming = isSquatExercise ? squatFramingWarning(frame.normalized, frame.visibility) : null;
 			const squatFramingMessage =
-				squatFraming === 'knees-not-visible'
+				!squatBodyInFrame
+					? 'Keep shoulders, hips, knees, and feet fully inside the frame'
+					: squatFraming === 'knees-not-visible'
 					? 'Move farther — keep both knees in frame'
 					: squatFraming === 'too-close'
 					? 'Move back — keep shoulders through feet in frame'
@@ -806,12 +848,24 @@ export function usePoseSession({
 	// screen decode one video frame at a time while reusing the complete live
 	// landmark → smoothing → exercise-counter pipeline above.
 	const processReplayImage = useCallback(
-		async ({ imagePath, timestampMs, displayWidth, displayHeight }: ReplayImageFrame): Promise<void> => {
+		async ({
+			imagePath,
+			timestampMs,
+			displayWidth,
+			displayHeight,
+			sessionGeneration,
+		}: ReplayImageFrame): Promise<void> => {
+			const expectedGeneration = sessionGeneration ?? sessionGenerationRef.current;
+			const sessionIsCurrent = () =>
+				isRunningRef.current && sessionGenerationRef.current === expectedGeneration;
+			if (!sessionIsCurrent()) return;
 			const coordinator = createReplayViewCoordinator(displayWidth, displayHeight);
 			try {
 				const results = await PoseDetectionOnImage(imagePath, POSE_MODEL_FILE, POSE_DETECTION_OPTIONS);
+				if (!sessionIsCurrent()) return;
 				onResults(results, coordinator, timestampMs);
 			} catch (error) {
+				if (!sessionIsCurrent()) return;
 				// The Android IMAGE bridge rejects an otherwise valid frame when no
 				// pose is present, unlike the live-stream bridge which reports a
 				// normal gap. Preserve the live behavior so one blurred/occluded
